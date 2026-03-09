@@ -1,0 +1,9 @@
+matplotlib
+scikit-image
+onnxruntime
+scipy
+numpy
+utm
+usb-monitor
+opencv-python
+platformdirs

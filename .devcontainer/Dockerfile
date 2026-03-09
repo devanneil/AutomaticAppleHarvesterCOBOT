@@ -1,31 +1,40 @@
-FROM osrf/ros:kilted-desktop-full
-ARG USERNAME=USERNAME
-ARG USER_UID=1000
-ARG USER_GID=$USER_UID
+FROM ros-humble-duco-base
 
-# Delete user if it exists in container (e.g Ubuntu Noble: ubuntu)
-RUN if id -u $USER_UID ; then userdel `id -un $USER_UID` ; fi
+RUN mkdir -p /home/$USERNAME/ws/src
 
-# Create the user
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
-    #
-    # [Optional] Add sudo support. Omit if you don't need to install software after connecting.
-    && apt-get update \
-    && apt-get install -y sudo \
-    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
-    && chmod 0440 /etc/sudoers.d/$USERNAME
-RUN apt-get update && apt-get upgrade -y
-RUN apt-get install -y python3-pip
-ENV SHELL /bin/bash
+WORKDIR /home/$USERNAME/ws
+# Copy dependency files only (for cache efficiency) 
+COPY apt-packages.txt /tmp/apt-packages.txt 
+COPY pip-requirements.txt /tmp/requirements.txt
+# Copy entrypoint file 
+COPY entrypoint.sh /tmp/entrypoint.sh 
+RUN sudo chmod -R +777 /tmp 
+# Install apt dependencies in ONE layer 
+RUN --mount=type=cache,target=/var/cache/apt \
+ sudo apt-get update \
+  && sudo apt-get install -y --no-install-recommends \
+   $(tr '\n' ' ' < /tmp/apt-packages.txt) \
+    && sudo rm -rf /var/lib/apt/lists/* 
+# Install pip dependencies 
+RUN --mount=type=cache,target=/root/.cache/pip \
+python3 -m pip install --upgrade pip \
+  && pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# ********************************************************
-# * Anything else you want to do like clean up goes here *
-# ********************************************************
-
-RUN echo "source /opt/ros/kilted/setup.bash" >> /home/$USERNAME/.bashrc
-RUN echo "source /home/ws/install/setup.bash" >> /home/$USERNAME/.bashrc
 RUN echo "export DISPLAY=host.docker.internal:0" >> /home/$USERNAME/.bashrc
-# [Optional] Set the default user. Omit if you want to keep the default as root.
+RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+RUN echo "source /home/ws/install/setup.bash" >> ~/.bashrc
+
 USER $USERNAME
+
+RUN sudo rosdep fix-permissions
+
+# Add ros-dev to video group 
+RUN sudo groupadd -f video && sudo usermod -aG video $USERNAME 
+
+# Add ros-dev to dialout group 
+RUN sudo groupadd -f dialout && sudo usermod -aG dialout $USERNAME
+
+SHELL ["/bin/bash", "-c"] 
+ENV SHELL=/bin/bash 
+ENTRYPOINT [ "/tmp/entrypoint.sh" ] 
 CMD ["/bin/bash"]
