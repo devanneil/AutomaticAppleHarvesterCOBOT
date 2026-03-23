@@ -36,5 +36,6 @@
        "source=/run/desktop/mnt/host/wslg/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
        "source=/run/desktop/mnt/host/wslg,target=/mnt/wslg,type=bind,consistency=cached"
     ],
+    "forwardPorts": [9007, 9008, 9009],
     "postCreateCommand": "rosdep update && rosdep install --from-paths src --ignore-src -y && sudo chown -R $(whoami) /home/ws/"
 }
