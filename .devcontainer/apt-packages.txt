@@ -16,6 +16,7 @@ libspdlog-dev
 udev
 nano
 wget
+iproute2
 
 ros-dev-tools
 ros-humble-moveit
