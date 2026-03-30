@@ -1,0 +1,24 @@
+{
+  "name": "ROS2",
+
+  "dockerComposeFile": "docker-compose.yml",
+
+  "service": "ros2",
+
+  "workspaceFolder": "/home/ws",
+
+  "customizations": {
+    "vscode": {
+      "extensions":[
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-themes",
+        "twxs.cmake",
+        "donjayamanne.python-extension-pack",
+        "eamodio.gitlens",
+        "ms-iot.vscode-ros"
+      ]
+    }
+  },
+
+  "postCreateCommand": "rosdep update && rosdep install --from-paths src --ignore-src -y && sudo chown -R $(whoami) /home/ws/"
+}

@@ -53,4 +53,4 @@ qtcreator-*
 CATKIN_IGNORE
 
 config.xlaunch
-duco_ros_*
+duco_ros2_*

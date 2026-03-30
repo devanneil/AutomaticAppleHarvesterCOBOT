@@ -51,6 +51,10 @@ RUN mkdir -p /home/$USERNAME/vsense_ros2 \
 
 #=================================Vsense ROS2 Setup=========================
 
+# Copy camera proxy script
+COPY networkForwardServer.py /home/$USERNAME/camera_proxy.py
+RUN sudo chmod +x /home/$USERNAME/camera_proxy.py
+
 SHELL ["/bin/bash", "-c"] 
 ENV SHELL=/bin/bash 
 ENTRYPOINT [ "/tmp/entrypoint.sh" ] 

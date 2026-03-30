@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  ros2:
+    container_name: ros2-dev
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: ros-dev
+
+    privileged: true
+
+    # Equivalent to workspaceMount
+    volumes:
+      - .:/home/ws
+
+      # GUI / WSLg mounts
+      - /run/desktop/mnt/host/wslg/.X11-unix:/tmp/.X11-unix
+      - /run/desktop/mnt/host/wslg:/mnt/wslg
+
+    environment:
+      DISPLAY: host.docker.internal:0
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_DOMAIN_ID: "42"
+      CAMERA_IP: host.docker.internal
+
+    # Equivalent to runArgs
+    pid: host
+    ipc: host
+
+    ports:
+      - "9007:9007"
+      - "9008:9008"
+      - "9009:9009"
+
+    networks:
+      ros_net:
+        ipv4_address: 192.168.1.10
+
+networks:
+  ros_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.1.0/16

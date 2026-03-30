@@ -17,6 +17,7 @@ udev
 nano
 wget
 iproute2
+iputils-ping
 
 ros-dev-tools
 ros-humble-moveit
