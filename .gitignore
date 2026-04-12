@@ -57,3 +57,4 @@ duco_ros2_*
 
 frames_*
 rosbag2*
+ws/models/*
