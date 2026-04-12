@@ -14,6 +14,11 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 
+params_file = os.path.join(
+    launch_package_path,
+    "config",
+    "duco_params.yaml"
+)
 
 def wait_for_robot(context):
 

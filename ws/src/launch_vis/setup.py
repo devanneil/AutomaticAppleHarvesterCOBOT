@@ -26,6 +26,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'scepter_cam_wrapper = launch_vis.scepter_cam_wrapper:main',
         ],
     },
 )
