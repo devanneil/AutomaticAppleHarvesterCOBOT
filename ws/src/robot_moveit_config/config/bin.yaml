@@ -1,0 +1,7 @@
+add_bin:
+  ros__parameters:
+    cornerx: [-0.1, -0.1, 0.0]
+    length: 1.3
+    width: 1.3
+    height: 0.5
+    wall: 0.02

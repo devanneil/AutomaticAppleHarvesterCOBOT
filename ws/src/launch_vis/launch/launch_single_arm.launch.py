@@ -10,8 +10,11 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 
+from ament_index_python.packages import get_package_share_directory
+
 import subprocess
 import time
+import os
 
 
 # -----------------------------
@@ -48,10 +51,15 @@ def generate_launch_description():
     moveit_config = (
         MoveItConfigsBuilder(
             "gcr16_2000",
-            package_name="duco_gcr16_2000_moveit_config"
+            package_name="robot_moveit_config"
         ).to_moveit_configs()
     )
 
+    bin_config = os.path.join(
+        get_package_share_directory("robot_moveit_config"),
+        "config",
+        "bin.yaml"
+    )
     ld = LaunchDescription()
 
     # -----------------------------
@@ -162,6 +170,14 @@ def generate_launch_description():
                 "server_host_1": LaunchConfiguration("robot_ip"),
                 "arm_domain": LaunchConfiguration("arm_domain")
             }]
+        )
+    )
+
+    ld.add_action(
+        Node(
+            package="moveit_scene_setup",
+            executable="add_bin",
+            parameters=[bin_config],
         )
     )
 
