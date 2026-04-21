@@ -6,5 +6,6 @@
     "python.analysis.extraPaths": [
         "/opt/ros/humble/lib/python3.10/site-packages",
         "/opt/ros/humble/local/lib/python3.10/dist-packages"
-    ]
+    ],
+    "cmake.sourceDirectory": "/mnt/c/Users/rnall/Desktop/AutomaticAppleHarvesterCOBOT/duco_ros_sdk/duco_ros2_ws/src/duco_gcr5_910_moveit_config"
 }

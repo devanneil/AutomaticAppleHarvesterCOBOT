@@ -27,4 +27,19 @@ def generate_launch_description():
             )
         )
 
+    # -----------------------------
+    # STATIC TF: arm camera mounted on robot arm
+    # -----------------------------
+    nodes.append(
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            arguments=[
+                "0.05", "0.0", "0.05",   # x y z (camera offset)
+                "0", "0", "0",           # roll pitch yaw
+                "link_6",             # parent (robot)
+                "arm1_cam_frame"         # child (camera root frame)
+            ]
+        )
+    )
     return LaunchDescription(nodes)
