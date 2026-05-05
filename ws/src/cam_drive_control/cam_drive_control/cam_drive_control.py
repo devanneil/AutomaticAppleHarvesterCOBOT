@@ -29,7 +29,7 @@ class CameraDriver(Node):
     def __init__(self):
         super().__init__('camera_driver')
         self.complete = False
-        self.step = 0.5
+        self.step = 0.01
         # Create a subscriber to the /camera/image_raw topic
         self.subscription = self.create_subscription(
             Image,
@@ -59,6 +59,9 @@ class CameraDriver(Node):
         # Create CV Context
         self.window_name = "Camera"
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+
+        # Create Control Thread Timer
+        self.control_timer = self.create_timer(0.01, self.control_loop)
 
         # TF Position Buffer
         self.tf_buffer = Buffer()
@@ -296,20 +299,20 @@ class CameraDriver(Node):
             image = self.image_process(img_bgr)
             # Display the image
             cv2.imshow(self.window_name, image)
-            key = cv2.waitKey(1) & 0xFF 
-
-            escape = False
-            if key != 255:
-                escape = self.parse_key(key)
-
-            # Check if window was closed
-            if cv2.getWindowProperty(self.window_name, cv2.WND_PROP_VISIBLE) < 1 or escape is True:
-                self.get_logger().info("Camera window closed. Shutting down node.")
-                cv2.destroyAllWindows()
-                self.complete = True
 
         except Exception as e:
             self.get_logger().error(f"Failed to convert image: {e}")
+    def control_loop(self):
+        key = cv2.waitKey(1) & 0xFF 
+        escape = False
+        if key != 255:
+            escape = self.parse_key(key)
+
+        # Check if window was closed
+        if cv2.getWindowProperty(self.window_name, cv2.WND_PROP_VISIBLE) < 1 or escape is True:
+            self.get_logger().info("Camera window closed. Shutting down node.")
+            cv2.destroyAllWindows()
+            self.complete = True
 
     def parse_key(self, key):
         if key == 27:
