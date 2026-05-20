@@ -269,7 +269,7 @@ class CameraDriver(Node):
             return image_bgr
 
         # Run YOLO inference
-        results = self.model(image_bgr)
+        results = self.model(image_bgr, verbose=False)
 
         # Render results on image
         annotated_img = results[0].plot()
@@ -327,7 +327,8 @@ class CameraDriver(Node):
             pose.pose.position.x += self.step
         if key == 2555904 or key in (ord('d'), ord('D')): # Right
             pose.pose.position.x -= self.step
-        self.send_pose_goal(pose, "link_6")
+        #DISABLED FOR TESTING / NOT CURRENTLY WORKING
+        #self.send_pose_goal(pose, "link_6")
 
 
 def main(args=None):

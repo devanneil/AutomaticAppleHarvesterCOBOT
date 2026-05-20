@@ -35,9 +35,9 @@ def generate_launch_description():
             package="tf2_ros",
             executable="static_transform_publisher",
             arguments=[
-                "0.05", "0.0", "0.05",   # x y z (camera offset)
-                "0", "0", "0",           # roll pitch yaw
-                "link_6",             # parent (robot)
+                "0.0", "0.0", "0.0",   # x y z (camera offset)
+                "0", "0", "-1.57079633",           # roll pitch yaw
+                "camera_link",             # parent (robot)
                 "arm1_cam_frame"         # child (camera root frame)
             ]
         )

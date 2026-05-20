@@ -11,4 +11,16 @@
 
     <xacro:gcr16_2000_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
 
+    <xacro:include filename="$(find robot_moveit_config)/config/end_effector.xacro"/>
+
+    <joint name="end_effector_joint" type="fixed">
+
+        <parent link="link_6"/>
+        <child link="bracket_link"/>
+
+        <!-- Adjust these -->
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+
+    </joint>
+
 </robot>
