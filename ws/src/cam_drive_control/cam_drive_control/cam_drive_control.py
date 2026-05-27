@@ -26,37 +26,12 @@ import matplotlib.pyplot as plt
 
 package_name = 'cam_drive_control'
 class CameraDriver(Node):
-    """A minimal ROS2 Python node that logs a message periodically."""
+    """A ROS node that reads from the rgbd camera, runs a model, and fetches the points near the consensus with wasd pan control"""
 
     def __init__(self):
         super().__init__('camera_driver')
-        self.complete = False
-        self.step = 0.01
-        camera_sn = "GDS871PBAA7110621"
-        # Create a subscriber to the /camera/image_raw topic
-        self.camera_subscription = self.create_subscription(
-            Image,
-            f'/arm1_cam/{camera_sn}/color/image_raw',  # Change to your topic name
-            self.listener_callback,
-            10
-        )
-
-        self.camera_info = None
-        self.rayCamera = None
-        self.camera_info_subscrition = self.create_subscription(
-            CameraInfo,
-            f'/arm1_cam/{camera_sn}/color/camera_info',
-            self.info_callback,
-            10
-        )
-
-        self.depth_subscription = self.create_subscription(
-            PointCloud2,
-            f'/arm1_cam/{camera_sn}/depth/points',
-            self.point_callback,
-            10
-        )
-
+        self.complete = False # Node exit flag
+        #=======================Parameters=============================
         # Declare parameters with default values
         self.declare_parameter('model_name', 'None')
         self.add_on_set_parameters_callback(self.change_model)
@@ -75,194 +50,63 @@ class CameraDriver(Node):
 
         if self.model_name == "None":
             self.get_logger().warn("No model specified, returning raw image!")
+
+        #==================CONSTANTS============================
+        self.step = 0.01 # WASD step control
+        camera_sn = "GDS871PBAA7110621" # Will come from hardware manager
+        self.camera_info = None # Visual camera info
+        self.rayCamera = None # Visual camera utility
+        self.window_name = "Camera"
+        self.confidence_threshold = 0.7
+        #==================VARIABLES===========================
+        self.results = None # Model annotations
+        self.selected_box = None # Clicked annotation
+        self.latest_cloud = None # Last point cloud received
+        #==================TOPICS==============================
+        # Create a subscriber to the /camera/image_raw topic
+        self.camera_subscription = self.create_subscription(
+            Image,
+            f'/arm1_cam/{camera_sn}/color/image_raw', 
+            self.image_callback,
+            10
+        )
+
+        self.camera_info_subscrition = self.create_subscription(
+            CameraInfo,
+            f'/arm1_cam/{camera_sn}/color/camera_info',
+            self.info_callback,
+            10
+        )
+
+        # Sub to depth field from camera, different dimensions from visual
+        self.depth_subscription = self.create_subscription(
+            PointCloud2,
+            f'/arm1_cam/{camera_sn}/depth/points',
+            self.point_callback,
+            10
+        )
         
         # Create CV Context
-        self.window_name = "Camera"
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
         cv2.setMouseCallback("Camera", self.mouse_event_handler)
-        self.confidence_threshold = 0.7
-        self.results = None
-        self.selected_box = None
-        self.latest_cloud = None
 
         # Create Control Thread Timer
         self.control_timer = self.create_timer(0.01, self.control_loop)
 
-        # TF Position Buffer
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(
-            self.tf_buffer,
-            self
-        )
-
-        # Joint state subscriber
-        self.joint_state_sub = self.create_subscription(
-            JointState,
-            "/joint_states",
-            self.joint_state_callback,
-            10
-        )
-
-        # Moveit move client
-        self.move_client = ActionClient(
-            self,
-            MoveGroup,
-            "/move_action"
-        )
-
-    def get_current_pose(self):
-
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                "base_link",   # base frame
-                "link_6",      # end effector
-                rclpy.time.Time()
-            )
-
-            pose = PoseStamped()
-
-            pose.header.frame_id = "base_link"
-            # FIX: assign values individually
-            pose.pose.position.x = (
-                transform.transform.translation.x
-            )
-            pose.pose.position.y = (
-                transform.transform.translation.y
-            )
-            pose.pose.position.z = (
-                transform.transform.translation.z
-            )
-
-            pose.pose.orientation.x = (
-                transform.transform.rotation.x
-            )
-            pose.pose.orientation.y = (
-                transform.transform.rotation.y
-            )
-            pose.pose.orientation.z = (
-                transform.transform.rotation.z
-            )
-            pose.pose.orientation.w = (
-                transform.transform.rotation.w
-            )
-
-            return pose
-
-        except Exception as e:
-            self.get_logger().warn(str(e))
-            return None
-
-    def send_pose_goal(self, target_pose, link_name):
-
-        goal_msg = MoveGroup.Goal()
-
-        # REQUIRED
-        goal_msg.request.group_name = "arm_1"
-        goal_msg.request.planner_id = "RRTConnectkConfigDefault"
-        goal_msg.request.num_planning_attempts = 5
-        goal_msg.request.allowed_planning_time = 5.0
-        goal_msg.request.max_velocity_scaling_factor = 0.2
-        goal_msg.request.max_acceleration_scaling_factor = 0.2
-
-        goal_msg.planning_options.plan_only = True
-        # Build constraints
-
-        constraints = Constraints()
-
-        # -------------------------
-        # Position Constraint
-        # -------------------------
-
-        position_constraint = PositionConstraint()
-
-        position_constraint.header.frame_id = "base_link"
-        position_constraint.link_name = link_name
-
-        # Small tolerance box
-        box = SolidPrimitive()
-        box.type = SolidPrimitive.BOX
-
-        box.dimensions = [
-            0.05,
-            0.05,
-            0.001,
-        ]
-
-        position_constraint.constraint_region.primitives.append(
-            box
-        )
-
-        position_constraint.constraint_region.primitive_poses.append(
-            target_pose.pose
-        )
-
-        position_constraint.weight = 1.0
-
-        constraints.position_constraints.append(
-            position_constraint
-        )
-
-        # -------------------------
-        # Orientation Constraint
-        # -------------------------
-
-        orientation_constraint = OrientationConstraint()
-
-        orientation_constraint.header.frame_id = "base_link"
-        orientation_constraint.link_name = link_name
-
-        orientation_constraint.orientation = (
-            target_pose.pose.orientation
-        )
-
-        orientation_constraint.absolute_x_axis_tolerance = 0.2
-        orientation_constraint.absolute_y_axis_tolerance = 0.2
-        orientation_constraint.absolute_z_axis_tolerance = 0.2
-
-        orientation_constraint.weight = 1.0
-
-        constraints.orientation_constraints.append(
-            orientation_constraint
-        )
-        # -----------------------
-        # Join Constraint
-        # ----------------------
-
-        joint_names = self.current_joint_state.name
-        joint_positions = self.current_joint_state.position
-
-        for name, pos in zip(joint_names, joint_positions):
-
-            joint_constraint = JointConstraint()
-            joint_constraint.joint_name = name
-            joint_constraint.position = pos
-            joint_constraint.tolerance_above = 0.1
-            joint_constraint.tolerance_below = 0.1
-            joint_constraint.weight = 1.0
-            
-            constraints.joint_constraints.append(
-                joint_constraint
-            )
-
-        goal_msg.request.goal_constraints.append(
-            constraints
-        )
-
-        self.move_client.wait_for_server()
-
-        goal_future = self.move_client.send_goal_async(goal_msg)
-
+    # Dynamic model support
     def change_model(self, params):
         for param in params:
             if param.name == 'model_name':
                 model_name = param.value
 
+                # Set to no model
                 if model_name == "None":
                     self.get_logger().warn("Model set to None, disabling inference.")
-                    self.model = None
+                    self.model = None # Memory safe
                     self.model_name = "None"
                     return SetParametersResult(successful=True)
 
+                # Set to new model
                 try:
                     self.get_logger().info(f"Loading model: {model_name}")
 
@@ -289,6 +133,8 @@ class CameraDriver(Node):
                     return SetParametersResult(successful=False)
 
         return SetParametersResult(successful=True)
+
+    # Run image through model
     def image_process(self, image_bgr):
         if self.model == None:
             return image_bgr
@@ -299,20 +145,9 @@ class CameraDriver(Node):
         # Render results on image
         annotated_img = self.results[0].plot()
         return annotated_img
-        
-    def extract_points_from_box(self, box):
 
-        if self.latest_cloud is None:
-            return None
-
-        filtered_points = self.rayCamera.find_rect_consensus(box, self.latest_cloud)
-
-        return filtered_points
-
-    def joint_state_callback(self, msg: JointState):
-        self.current_joint_state = msg
-
-    def listener_callback(self, msg: Image):
+    # ROS Callback for image
+    def image_callback(self, msg: Image):
         try:
             # Convert ROS2 Image message to NumPy array
             img_array = np.frombuffer(msg.data, dtype=np.uint8)
@@ -335,6 +170,8 @@ class CameraDriver(Node):
 
         except Exception as e:
             self.get_logger().error(f"Failed to convert image: {e}")
+    
+    # Collect camera info and instantiate camera
     def info_callback(self, msg: CameraInfo):
         if self.camera_info is None:
             self.camera_info = msg
@@ -343,8 +180,11 @@ class CameraDriver(Node):
 
             # stop subscription after first message
             self.destroy_subscription(self.camera_info_subscrition)
+    
+    #Set latest cloud to current cloud
     def point_callback(self, msg: PointCloud2):
         self.latest_cloud = msg
+    
     # Mouse callback function
     def mouse_event_handler(self, event, x, y, flags, param):
         """
@@ -390,6 +230,17 @@ class CameraDriver(Node):
 
         return None
 
+    # Find 3D points from box consensus  
+    def extract_points_from_box(self, box):
+
+        if self.latest_cloud is None:
+            return None
+
+        filtered_points = self.rayCamera.find_rect_consensus(box, self.latest_cloud)
+
+        return filtered_points
+
+    # Handle keyboard input for esc key and wasd control
     def control_loop(self):
         key = cv2.waitKey(1) & 0xFF 
         escape = False
@@ -402,6 +253,7 @@ class CameraDriver(Node):
             cv2.destroyAllWindows()
             self.complete = True
 
+    # Process cv keycodes 
     def parse_key(self, key):
         if key == 27:
             return True # Escape key
@@ -419,6 +271,7 @@ class CameraDriver(Node):
         #self.send_pose_goal(pose, "link_6")
 
 class RayCamera:
+    """Camera model for parsing real world coordinates from image and depth field"""
     def __init__(self, camera_info):
         self.fx = camera_info.k[0]
         self.fy = camera_info.k[4]
@@ -426,6 +279,7 @@ class RayCamera:
         self.cy = camera_info.k[5]
         self.frame_id = camera_info.header.frame_id
     
+    # Normalized ray in real space
     def pixel_to_ray(self, u, v):
         x = (u - self.cx) / self.fx
         y = (v - self.cy) / self.fy
@@ -433,6 +287,7 @@ class RayCamera:
         dNorm = d / np.linalg.norm(d)
         return dNorm
 
+    # Finds closes point in cloud to image coordinate
     def find_best_match(self, cloud_msg, u, v):
 
         ray = self.pixel_to_ray(u, v)
@@ -465,7 +320,8 @@ class RayCamera:
 
         return best_point, best_dist
 
-    def find_rect_consensus(self, box, cloud_msg, frame_id=None):
+    # Finds real world coordinates for rectangle region from consensus image
+    def find_rect_consensus(self, box, cloud_msg, buffer = 0.1, frame_id=None):
         x1, y1, x2, y2 = map(int, box)
 
         c1, _ = self.find_best_match(cloud_msg, x1, y1)
@@ -474,11 +330,11 @@ class RayCamera:
         if c1 is None or c2 is None:
             return []
 
-        x_min = min(c1[0], c2[0])
-        y_min = min(c1[1], c2[1])
+        x_min = min(c1[0], c2[0]) - buffer
+        y_min = min(c1[1], c2[1]) - buffer
 
-        x_max = max(c1[0], c2[0])
-        y_max = max(c1[1], c2[1])
+        x_max = max(c1[0], c2[0]) + buffer
+        y_max = max(c1[1], c2[1]) + buffer
 
         points = []
         
