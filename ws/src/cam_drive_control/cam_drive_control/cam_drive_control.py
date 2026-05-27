@@ -42,6 +42,7 @@ class CameraDriver(Node):
         self.declare_parameter('model_name', 'None')
         self.add_on_set_parameters_callback(self.change_model)
 
+        self.model = None
         self.model_name = self.get_parameter('model_name').value
 
         # Manually load initial model safely
