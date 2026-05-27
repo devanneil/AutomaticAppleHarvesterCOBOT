@@ -3,7 +3,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rcl_interfaces.msg import SetParametersResult
-from sensor_msgs.msg import Image, JointState
+from sensor_msgs.msg import Image, JointState, PointCloud2
+from sensor_msgs_py import point_cloud2
 import numpy as np
 import cv2
 import torch
@@ -21,6 +22,7 @@ from moveit_msgs.msg import (
     JointConstraint,
 )
 from shape_msgs.msg import SolidPrimitive
+import matplotlib.pyplot as plt
 
 package_name = 'cam_drive_control'
 class CameraDriver(Node):
@@ -30,11 +32,19 @@ class CameraDriver(Node):
         super().__init__('camera_driver')
         self.complete = False
         self.step = 0.01
+        camera_sn = "GDS871PBAA7110621"
         # Create a subscriber to the /camera/image_raw topic
         self.subscription = self.create_subscription(
             Image,
-            '/arm1_cam/color/image_raw',  # Change to your topic name
+            f'/arm1_cam/{camera_sn}/color/image_raw',  # Change to your topic name
             self.listener_callback,
+            10
+        )
+
+        self.subscription = self.create_subscription(
+            PointCloud2,
+            f'/arm1_cam/{camera_sn}/depth/points',
+            self.point_callback,
             10
         )
 
@@ -60,6 +70,11 @@ class CameraDriver(Node):
         # Create CV Context
         self.window_name = "Camera"
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        cv2.setMouseCallback("Camera", self.mouse_event_handler)
+        self.confidence_threshold = 0.7
+        self.results = None
+        self.selected_box = None
+        self.latest_cloud = None
 
         # Create Control Thread Timer
         self.control_timer = self.create_timer(0.01, self.control_loop)
@@ -270,13 +285,50 @@ class CameraDriver(Node):
             return image_bgr
 
         # Run YOLO inference
-        results = self.model(image_bgr, verbose=False)
+        self.results = self.model(image_bgr, verbose=False)
 
         # Render results on image
-        annotated_img = results[0].plot()
+        annotated_img = self.results[0].plot()
         return annotated_img
         
-        
+    def extract_points_from_box(self, box):
+
+        if self.latest_cloud is None:
+            return None
+
+        width = 1200
+        height = 1600
+
+        x1, y1, x2, y2 = map(int, box)
+
+        x1 = max(0, min(width - 1, x1))
+        x2 = max(0, min(width - 1, x2))
+
+        y1 = max(0, min(height - 1, y1))
+        y2 = max(0, min(height - 1, y2))
+
+        gen = point_cloud2.read_points(
+            self.latest_cloud,
+            field_names=("x", "y", "z"),
+            skip_nans=False
+        )
+
+        # Convert structured dtype -> plain float32 array
+        cloud = np.array(
+            [[p[0], p[1], p[2]] for p in gen],
+            dtype=np.float32
+        )
+
+        cloud = cloud.reshape((height, width, 3))
+
+        roi = cloud[y1:y2, x1:x2]
+
+        valid = np.isfinite(roi).all(axis=2)
+
+        filtered_points = roi[valid]
+
+        return filtered_points
+
     def joint_state_callback(self, msg: JointState):
         self.current_joint_state = msg
 
@@ -303,6 +355,54 @@ class CameraDriver(Node):
 
         except Exception as e:
             self.get_logger().error(f"Failed to convert image: {e}")
+
+    def point_callback(self, msg: PointCloud2):
+        self.latest_cloud = msg
+    # Mouse callback function
+    def mouse_event_handler(self, event, x, y, flags, param):
+        """
+        Handles mouse events and prints coordinates.
+        Draws markers for visual feedback.
+        """
+        img = param  # The image passed from setMouseCallback
+
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return None
+
+        if self.results is None:
+            return None
+
+        result = self.results[0]
+
+        for box in result.boxes:
+
+            # Bounding box coordinates
+            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+
+            # Confidence
+            confidence = float(box.conf[0])
+
+            # Class ID
+            class_id = int(box.cls[0])
+
+            # Class name
+            class_name = self.model.names[class_id]
+
+            # Check if click is inside box
+            if x1 <= x <= x2 and y1 <= y <= y2:
+
+                # Positive consensus
+                if confidence >= self.confidence_threshold:
+
+                    self.selected_box = (x1, y1, x2, y2)
+                    points = self.extract_points_from_box(self.selected_box)
+
+                    ax = plt.axes(projection='3d')
+                    ax.scatter(points[:,0], points[:,1], points[:,2], s=1)
+                    plt.show()
+
+        return None
+
     def control_loop(self):
         key = cv2.waitKey(1) & 0xFF 
         escape = False
