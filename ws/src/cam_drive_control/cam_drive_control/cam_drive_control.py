@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rcl_interfaces.msg import SetParametersResult
-from sensor_msgs.msg import Image, JointState, PointCloud2
+from sensor_msgs.msg import Image, JointState, PointCloud2, CameraInfo
 from sensor_msgs_py import point_cloud2
 import numpy as np
 import cv2
@@ -34,14 +34,23 @@ class CameraDriver(Node):
         self.step = 0.01
         camera_sn = "GDS871PBAA7110621"
         # Create a subscriber to the /camera/image_raw topic
-        self.subscription = self.create_subscription(
+        self.camera_subscription = self.create_subscription(
             Image,
             f'/arm1_cam/{camera_sn}/color/image_raw',  # Change to your topic name
             self.listener_callback,
             10
         )
 
-        self.subscription = self.create_subscription(
+        self.camera_info = None
+        self.rayCamera = None
+        self.camera_info_subscrition = self.create_subscription(
+            CameraInfo,
+            f'/arm1_cam/{camera_sn}/color/camera_info',
+            self.info_callback,
+            10
+        )
+
+        self.depth_subscription = self.create_subscription(
             PointCloud2,
             f'/arm1_cam/{camera_sn}/depth/points',
             self.point_callback,
@@ -296,36 +305,7 @@ class CameraDriver(Node):
         if self.latest_cloud is None:
             return None
 
-        width = 1200
-        height = 1600
-
-        x1, y1, x2, y2 = map(int, box)
-
-        x1 = max(0, min(width - 1, x1))
-        x2 = max(0, min(width - 1, x2))
-
-        y1 = max(0, min(height - 1, y1))
-        y2 = max(0, min(height - 1, y2))
-
-        gen = point_cloud2.read_points(
-            self.latest_cloud,
-            field_names=("x", "y", "z"),
-            skip_nans=False
-        )
-
-        # Convert structured dtype -> plain float32 array
-        cloud = np.array(
-            [[p[0], p[1], p[2]] for p in gen],
-            dtype=np.float32
-        )
-
-        cloud = cloud.reshape((height, width, 3))
-
-        roi = cloud[y1:y2, x1:x2]
-
-        valid = np.isfinite(roi).all(axis=2)
-
-        filtered_points = roi[valid]
+        filtered_points = self.rayCamera.find_rect_consensus(box, self.latest_cloud)
 
         return filtered_points
 
@@ -355,7 +335,14 @@ class CameraDriver(Node):
 
         except Exception as e:
             self.get_logger().error(f"Failed to convert image: {e}")
+    def info_callback(self, msg: CameraInfo):
+        if self.camera_info is None:
+            self.camera_info = msg
+            self.rayCamera = RayCamera(msg)
+            self.get_logger().info("Captured camera_info")
 
+            # stop subscription after first message
+            self.destroy_subscription(self.camera_info_subscrition)
     def point_callback(self, msg: PointCloud2):
         self.latest_cloud = msg
     # Mouse callback function
@@ -430,6 +417,80 @@ class CameraDriver(Node):
             pose.pose.position.x -= self.step
         #DISABLED FOR TESTING / NOT CURRENTLY WORKING
         #self.send_pose_goal(pose, "link_6")
+
+class RayCamera:
+    def __init__(self, camera_info):
+        self.fx = camera_info.k[0]
+        self.fy = camera_info.k[4]
+        self.cx = camera_info.k[2]
+        self.cy = camera_info.k[5]
+        self.frame_id = camera_info.header.frame_id
+    
+    def pixel_to_ray(self, u, v):
+        x = (u - self.cx) / self.fx
+        y = (v - self.cy) / self.fy
+        d = np.array([x, y, 1.0])
+        dNorm = d / np.linalg.norm(d)
+        return dNorm
+
+    def find_best_match(self, cloud_msg, u, v):
+
+        ray = self.pixel_to_ray(u, v)
+
+        best_point = None
+        best_dist = float("inf")
+
+        for x, y, z in point_cloud2.read_points(
+            cloud_msg,
+            field_names=("x", "y", "z"),
+            skip_nans=True
+        ):
+
+            p = np.array([x, y, z])
+
+            # skip invalid points
+            if np.linalg.norm(p) < 1e-6:
+                continue
+
+            # perpendicular distance to ray
+            dist = np.linalg.norm(np.cross(p, ray))
+
+            # optional: ensure point is in front of camera
+            if np.dot(p, ray) <= 0:
+                continue
+
+            if dist < best_dist:
+                best_dist = dist
+                best_point = p
+
+        return best_point, best_dist
+
+    def find_rect_consensus(self, box, cloud_msg, frame_id=None):
+        x1, y1, x2, y2 = map(int, box)
+
+        c1, _ = self.find_best_match(cloud_msg, x1, y1)
+        c2, _ = self.find_best_match(cloud_msg, x2, y2)
+
+        if c1 is None or c2 is None:
+            return []
+
+        x_min = min(c1[0], c2[0])
+        y_min = min(c1[1], c2[1])
+
+        x_max = max(c1[0], c2[0])
+        y_max = max(c1[1], c2[1])
+
+        points = []
+        
+        for x, y, z in point_cloud2.read_points(
+            cloud_msg,
+            field_names=("x", "y", "z"),
+            skip_nans=True
+        ):
+            if x_min <= x <= x_max and y_min <= y <= y_max:
+                points.append([x, y, z])
+        
+        return np.array(points)
 
 
 def main(args=None):
