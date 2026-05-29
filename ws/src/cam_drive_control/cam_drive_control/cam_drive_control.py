@@ -61,7 +61,6 @@ class CameraDriver(Node):
         #==================VARIABLES===========================
         self.results = None # Model annotations
         self.selected_box = None # Clicked annotation
-        self.latest_cloud = None # Last point cloud received
         #==================TOPICS==============================
         # Create a subscriber to the /camera/image_raw topic
         self.camera_subscription = self.create_subscription(
@@ -175,7 +174,7 @@ class CameraDriver(Node):
     def info_callback(self, msg: CameraInfo):
         if self.camera_info is None:
             self.camera_info = msg
-            self.rayCamera = RayCamera(msg)
+            self.rayCamera = RGBCamera(msg)
             self.get_logger().info("Captured camera_info")
 
             # stop subscription after first message
@@ -183,7 +182,7 @@ class CameraDriver(Node):
     
     #Set latest cloud to current cloud
     def point_callback(self, msg: PointCloud2):
-        self.latest_cloud = msg
+        self.rayCamera.updateCloud(msg)
     
     # Mouse callback function
     def mouse_event_handler(self, event, x, y, flags, param):
@@ -192,6 +191,9 @@ class CameraDriver(Node):
         Draws markers for visual feedback.
         """
         img = param  # The image passed from setMouseCallback
+
+        if self.rayCamera.processing is True:
+            return None
 
         if event != cv2.EVENT_LBUTTONDOWN:
             return None
@@ -233,10 +235,7 @@ class CameraDriver(Node):
     # Find 3D points from box consensus  
     def extract_points_from_box(self, box):
 
-        if self.latest_cloud is None:
-            return None
-
-        filtered_points = self.rayCamera.find_rect_consensus(box, self.latest_cloud)
+        filtered_points = self.rayCamera.find_rect_consensus(box)
 
         return filtered_points
 
@@ -270,14 +269,44 @@ class CameraDriver(Node):
         #DISABLED FOR TESTING / NOT CURRENTLY WORKING
         #self.send_pose_goal(pose, "link_6")
 
-class RayCamera:
+class RGBCamera:
     """Camera model for parsing real world coordinates from image and depth field"""
     def __init__(self, camera_info):
+        #Constants
+        self.width = 640
+        self.height = 480
         self.fx = camera_info.k[0]
         self.fy = camera_info.k[4]
         self.cx = camera_info.k[2]
         self.cy = camera_info.k[5]
-        self.frame_id = camera_info.header.frame_id
+        self.cam_frame_id = camera_info.header.frame_id
+        self.depth_frame_id = None
+        #Variables
+        self.cloud_msg = None
+        self.xyz_cloud = None
+        self.frame_id = None
+        #Control flag
+        self.processing = False
+    
+    def updateCloud(self, cloud_msg):
+        if self.processing is True:
+            return # Ignore changes while thinking
+        self.cloud_msg = cloud_msg
+
+        if self.depth_frame_id is None:
+            self.depth_frame_id = cloud_msg.header.frame_id
+        
+        pts = np.array(
+            [(p[0], p[1], p[2])
+            for p in point_cloud2.read_points(
+                cloud_msg,
+                field_names=("x","y","z"),
+                skip_nans=False
+            )],
+            dtype=np.float32
+        )
+
+        self.xyz_cloud = pts.reshape(480,640,3)
     
     # Normalized ray in real space
     def pixel_to_ray(self, u, v):
@@ -288,44 +317,39 @@ class RayCamera:
         return dNorm
 
     # Finds closes point in cloud to image coordinate
-    def find_best_match(self, cloud_msg, u, v):
+    def find_best_match(self, u, v):
 
         ray = self.pixel_to_ray(u, v)
 
         best_point = None
         best_dist = float("inf")
 
-        for x, y, z in point_cloud2.read_points(
-            cloud_msg,
-            field_names=("x", "y", "z"),
-            skip_nans=True
-        ):
+        for col in self.xyz_cloud:
+            for p in col:
+                # skip invalid points
+                if np.linalg.norm(p) < 1e-6:
+                    continue
 
-            p = np.array([x, y, z])
+                # perpendicular distance to ray
+                dist = np.linalg.norm(np.cross(p, ray))
 
-            # skip invalid points
-            if np.linalg.norm(p) < 1e-6:
-                continue
+                # optional: ensure point is in front of camera
+                if np.dot(p, ray) <= 0:
+                    continue
 
-            # perpendicular distance to ray
-            dist = np.linalg.norm(np.cross(p, ray))
-
-            # optional: ensure point is in front of camera
-            if np.dot(p, ray) <= 0:
-                continue
-
-            if dist < best_dist:
-                best_dist = dist
-                best_point = p
+                if dist < best_dist:
+                    best_dist = dist
+                    best_point = p
 
         return best_point, best_dist
 
     # Finds real world coordinates for rectangle region from consensus image
-    def find_rect_consensus(self, box, cloud_msg, buffer = 0.1, frame_id=None):
+    def find_rect_consensus(self, box, buffer = 0.1, frame_id=None):
+        self.processing = True
         x1, y1, x2, y2 = map(int, box)
 
-        c1, _ = self.find_best_match(cloud_msg, x1, y1)
-        c2, _ = self.find_best_match(cloud_msg, x2, y2)
+        c1, _ = self.find_best_match(x1, y1)
+        c2, _ = self.find_best_match(x2, y2)
 
         if c1 is None or c2 is None:
             return []
@@ -336,16 +360,18 @@ class RayCamera:
         x_max = max(c1[0], c2[0]) + buffer
         y_max = max(c1[1], c2[1]) + buffer
 
-        points = []
-        
-        for x, y, z in point_cloud2.read_points(
-            cloud_msg,
-            field_names=("x", "y", "z"),
-            skip_nans=True
-        ):
-            if x_min <= x <= x_max and y_min <= y <= y_max:
-                points.append([x, y, z])
-        
+        xs = self.xyz_cloud[:, :, 0]
+        ys = self.xyz_cloud[:, :, 1]
+        zs = self.xyz_cloud[:, :, 2]
+
+        mask = (
+            (xs > x_min) & (xs < x_max) &
+            (ys > y_min) & (ys < y_max)
+        )
+
+        points = self.xyz_cloud[mask]
+
+        self.processing = False
         return np.array(points)
 
 
