@@ -55,7 +55,7 @@ class CameraDriver(Node):
         self.step = 0.01 # WASD step control
         camera_sn = "GDS871PBAA7110621" # Will come from hardware manager
         self.camera_info = None # Visual camera info
-        self.rayCamera = None # Visual camera utility
+        self.rgbdCamera = None # Visual camera utility
         self.window_name = "Camera"
         self.confidence_threshold = 0.7
         #==================VARIABLES===========================
@@ -84,7 +84,11 @@ class CameraDriver(Node):
             self.point_callback,
             10
         )
+        #===================TF Interface=======================
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         
+        #===================CV Interface======================
         # Create CV Context
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
         cv2.setMouseCallback("Camera", self.mouse_event_handler)
@@ -174,7 +178,7 @@ class CameraDriver(Node):
     def info_callback(self, msg: CameraInfo):
         if self.camera_info is None:
             self.camera_info = msg
-            self.rayCamera = RGBCamera(msg)
+            self.rgbdCamera = RGBCamera(msg, self.tf_buffer)
             self.get_logger().info("Captured camera_info")
 
             # stop subscription after first message
@@ -182,7 +186,9 @@ class CameraDriver(Node):
     
     #Set latest cloud to current cloud
     def point_callback(self, msg: PointCloud2):
-        self.rayCamera.updateCloud(msg)
+        if self.rgbdCamera is None:
+            return
+        self.rgbdCamera.updateCloud(msg)
     
     # Mouse callback function
     def mouse_event_handler(self, event, x, y, flags, param):
@@ -192,7 +198,7 @@ class CameraDriver(Node):
         """
         img = param  # The image passed from setMouseCallback
 
-        if self.rayCamera.processing is True:
+        if self.rgbdCamera is None or self.rgbdCamera.processing is True:
             return None
 
         if event != cv2.EVENT_LBUTTONDOWN:
@@ -235,7 +241,7 @@ class CameraDriver(Node):
     # Find 3D points from box consensus  
     def extract_points_from_box(self, box):
 
-        filtered_points = self.rayCamera.find_rect_consensus(box)
+        filtered_points = self.rgbdCamera.find_rect_consensus(box)
 
         return filtered_points
 
@@ -271,7 +277,7 @@ class CameraDriver(Node):
 
 class RGBCamera:
     """Camera model for parsing real world coordinates from image and depth field"""
-    def __init__(self, camera_info):
+    def __init__(self, camera_info, tf_buffer):
         #Constants
         self.width = 640
         self.height = 480
@@ -287,6 +293,8 @@ class RGBCamera:
         self.frame_id = None
         #Control flag
         self.processing = False
+        #ROS interface
+        self.tf_buffer = tf_buffer
     
     def updateCloud(self, cloud_msg):
         if self.processing is True:
@@ -314,7 +322,19 @@ class RGBCamera:
         y = (v - self.cy) / self.fy
         d = np.array([x, y, 1.0])
         dNorm = d / np.linalg.norm(d)
-        return dNorm
+        if self.depth_frame_id is None:
+            return dNorm # No depth frame, skip here
+        transform = self.tf_buffer.lookup_transform(
+            self.depth_frame_id,
+            self.cam_frame_id,
+            rclpy.time.Time()
+        )
+        q = transform.transform.rotation
+        T = quat_to_rot_matrix([q.x, q.y, q.z, q.w])
+        R = T[:3, :3]
+        ray_depth = R @ dNorm
+        ray_depth = ray_depth / np.linalg.norm(ray_depth)
+        return ray_depth
 
     # Finds closes point in cloud to image coordinate
     def find_best_match(self, u, v):
@@ -374,6 +394,14 @@ class RGBCamera:
         self.processing = False
         return np.array(points)
 
+def quat_to_rot_matrix(q):
+    x, y, z, w = q
+
+    return np.array([
+        [1 - 2*(y*y + z*z),     2*(x*y - z*w),     2*(x*z + y*w)],
+        [2*(x*y + z*w),         1 - 2*(x*x + z*z), 2*(y*z - x*w)],
+        [2*(x*z - y*w),         2*(y*z + x*w),     1 - 2*(x*x + y*y)]
+    ])
 
 def main(args=None):
     rclpy.init(args=args)
