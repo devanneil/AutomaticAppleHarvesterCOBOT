@@ -1,0 +1,156 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:macro name="bracket_tool" params="parent">
+
+    <!-- ===================================================== -->
+    <!-- Bracket -->
+    <!-- ===================================================== -->
+
+    <link name="bracket_link">
+
+        <!-- VISUAL -->
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+
+            <geometry>
+                <mesh
+                    filename="package://robot_moveit_config/models/End_Effector_Bracket_4.2.2026.stl"
+                    scale="0.001 0.001 0.001"/>
+            </geometry>
+
+            <material name="gray">
+                <color rgba="0.7 0.7 0.7 1.0"/>
+            </material>
+        </visual>
+
+        <!-- COLLISION -->
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+
+            <geometry>
+                <mesh
+                    filename="package://robot_moveit_config/models/End_Effector_Bracket_4.2.2026.stl"
+                    scale="0.001 0.001 0.001"/>
+            </geometry>
+        </collision>
+
+    </link>
+
+    <!-- ===================================================== -->
+    <!-- Camera -->
+    <!-- ===================================================== -->
+
+    <link name="camera_link">
+
+        <!-- VISUAL -->
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+
+            <geometry>
+                <mesh
+                    filename="package://robot_moveit_config/models/DS87-Mechanical_Outline_3D.STP.stl"
+                    scale="0.002 0.002 0.002"/>
+            </geometry>
+
+            <material name="gray">
+                <color rgba="0.3 0.3 0.3 1.0"/>
+            </material>
+        </visual>
+
+        <!-- COLLISION -->
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+
+            <geometry>
+                <mesh
+                    filename="package://robot_moveit_config/models/DS87-Mechanical_Outline_3D.STP.stl"
+                    scale="0.002 0.002 0.002"/>
+            </geometry>
+        </collision>
+
+    </link>
+
+    <!-- ===================================================== -->
+    <!-- Suction Sphere -->
+    <!-- ===================================================== -->
+
+    <link name="suction_link">
+
+        <!-- VISUAL -->
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+
+            <geometry>
+                <sphere radius="0.05"/>
+            </geometry>
+
+            <material name="green">
+                <color rgba="0 1.0 0 0.5"/>
+            </material>
+        </visual>
+
+        <!-- COLLISION -->
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+
+            <geometry>
+                <sphere radius="0.05"/>
+            </geometry>
+        </collision>
+
+    </link>
+
+    <!-- ===================================================== -->
+    <!-- TOOL CENTER POINT (TCP) -->
+    <!-- ===================================================== -->
+
+    <link name="tool_frame"/>
+
+    <!-- ===================================================== -->
+    <!-- JOINTS -->
+    <!-- ===================================================== -->
+
+    <!-- Camera Mount -->
+    <joint name="camera_joint" type="fixed">
+
+        <parent link="bracket_link"/>
+        <child link="camera_link"/>
+
+        <origin
+            xyz="0.0675 0 0.0254"
+            rpy="1.57079633 0 1.57079633"/>
+
+    </joint>
+
+    <!-- Suction Mount -->
+    <joint name="suction_joint" type="fixed">
+
+        <parent link="bracket_link"/>
+        <child link="suction_link"/>
+
+        <origin
+            xyz="0 0 0.14605"
+            rpy="0 0 0"/>
+
+    </joint>
+
+    <!-- Tool Frame -->
+    <joint name="tool_frame_joint" type="fixed">
+
+        <parent link="suction_link"/>
+        <child link="tool_frame"/>
+
+        <!-- TCP location -->
+        <origin
+            xyz="0 0 0.05"
+            rpy="0 0 0"/>
+
+    </joint>
+    <joint name="tool_mount_joint" type="fixed">
+        <parent link="${parent}"/>
+        <child link="bracket_link"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+</xacro:macro>
+</robot>

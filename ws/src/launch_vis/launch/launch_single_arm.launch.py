@@ -233,7 +233,7 @@ def generate_launch_description():
     )
 
     # Second wait gate
-    ld.add_action(OpaqueFunction(function=wait_for_robot))
+    #ld.add_action(OpaqueFunction(function=wait_for_robot))
     # -----------------------------
     # Move Group (Planner)
     # -----------------------------
