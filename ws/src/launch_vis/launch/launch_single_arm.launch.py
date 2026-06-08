@@ -20,7 +20,7 @@ import os
 # -----------------------------
 # Wait for robot
 # -----------------------------
-def wait_for_robot(context):
+def wait_for_network(context):
 
     robot_ip = LaunchConfiguration("robot_ip").perform(context)
 
@@ -41,7 +41,69 @@ def wait_for_robot(context):
 
     time.sleep(3)
 
+def wait_for_robot(context):
+    import rclpy
+    from rclpy.node import Node
+    from sensor_msgs.msg import JointState
+    from tf2_ros import Buffer, TransformListener
+    from rclpy.duration import Duration
+    import time
 
+    print("[Launch] Waiting for joint_states + TF readiness...")
+
+    rclpy.init()
+    node = Node("robot_readiness_checker")
+
+    tf_buffer = Buffer()
+    tf_listener = TransformListener(tf_buffer, node)
+
+    joint_state_ok = False
+    last_joint_time = None
+
+    def joint_cb(msg):
+        nonlocal joint_state_ok, last_joint_time
+
+        if len(msg.position) > 0:
+            joint_state_ok = True
+            last_joint_time = node.get_clock().now()
+
+    node.create_subscription(
+        JointState,
+        "/joint_states",
+        joint_cb,
+        10
+    )
+
+    start = time.time()
+    timeout = 30.0
+
+    while rclpy.ok():
+        rclpy.spin_once(node, timeout_sec=0.1)
+
+        if time.time() - start > timeout:
+            raise RuntimeError("TF/joint_states readiness timeout")
+
+        # 1. Wait for joint_states first (MOST IMPORTANT)
+        if not joint_state_ok:
+            continue
+
+        # 2. Wait for TF tree to have ANY usable transform
+        try:
+            if tf_buffer.can_transform(
+                "base_link",
+                "link_6",
+                rclpy.time.Time(),
+                timeout=Duration(seconds=0.1)
+            ):
+                print("[Launch] TF is ready.")
+                break
+        except Exception:
+            continue
+
+    node.destroy_node()
+    rclpy.shutdown()
+
+    print("[Launch] Robot ready.")
 # -----------------------------
 # Launch entry point
 # -----------------------------
@@ -96,7 +158,7 @@ def generate_launch_description():
     # -----------------------------
     # Wait for robot connection
     # -----------------------------
-    ld.add_action(OpaqueFunction(function=wait_for_robot))
+    ld.add_action(OpaqueFunction(function=wait_for_network))
 
     # -----------------------------
     # Robot State Publisher
@@ -105,17 +167,6 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 str(moveit_config.package_path / "launch/rsp.launch.py")
-            )
-        )
-    )
-
-    # -----------------------------
-    # Move Group (Planner)
-    # -----------------------------
-    ld.add_action(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                str(moveit_config.package_path / "launch/move_group.launch.py")
             )
         )
     )
@@ -178,6 +229,19 @@ def generate_launch_description():
             package="moveit_scene_setup",
             executable="add_bin",
             parameters=[bin_config],
+        )
+    )
+
+    # Second wait gate
+    ld.add_action(OpaqueFunction(function=wait_for_robot))
+    # -----------------------------
+    # Move Group (Planner)
+    # -----------------------------
+    ld.add_action(
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                str(moveit_config.package_path / "launch/move_group.launch.py")
+            )
         )
     )
 

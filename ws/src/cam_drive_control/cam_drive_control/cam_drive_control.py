@@ -24,8 +24,10 @@ from moveit_msgs.msg import (
     OrientationConstraint,
     JointConstraint,
     MotionPlanRequest,
-    PlanningOptions
+    PlanningOptions,
+    PositionIKRequest
 )
+from moveit_msgs.srv import GetPositionIK
 from shape_msgs.msg import SolidPrimitive
 from duco_msg.msg import DucoRobotState
 import matplotlib.pyplot as plt
@@ -61,13 +63,11 @@ def timer(func):
 
 
 package_name = 'cam_drive_control'
-arm_controller = None
 class CameraDriver(Node):
     """A ROS node that reads from the rgbd camera, runs a model, and fetches the points near the consensus with wasd pan control"""
 
     def __init__(self):
         super().__init__('camera_driver')
-        global arm_controller
         self.complete = False # Node exit flag
         #=======================Parameters=============================
         # Declare parameters with default values
@@ -117,6 +117,11 @@ class CameraDriver(Node):
             10
         )
 
+        self.apple_location_pub = self.create_publisher(
+            PoseStamped,
+            '/cam_drive_control/apple_location',
+            10
+        )
         # Sub to depth field from camera, different dimensions from visual
         self.depth_subscription = self.create_subscription(
             PointCloud2,
@@ -278,7 +283,7 @@ class CameraDriver(Node):
                 )
 
                 pt = PointStamped()
-                pt.header.frame_id = self.rgbdCamera.cam_frame_id
+                pt.header.frame_id = self.rgbdCamera.depth_frame_id
                 pt.point.x = float(centroid[0])
                 pt.point.y = float(centroid[1])
                 pt.point.z = float(centroid[2])
@@ -295,7 +300,9 @@ class CameraDriver(Node):
 
                 target_pose = build_pose(*target_point[:3], 0.7071068, 0.0, 0.7071068, 0.0)
 
-                arm_controller.execute_pick_sequence(target_pose)
+                self.apple_location_pub.publish(target_pose)
+                self.get_logger().info("Published Apple Pose!")
+
 
     # Find 3D points from box consensus  
     def extract_points_from_box(self, box):
@@ -310,10 +317,6 @@ class CameraDriver(Node):
         self.complete = True
     # Handle keyboard input for esc key and wasd control
     def control_loop(self):
-        global arm_controller
-        if arm_controller is not None and arm_controller.tf_buffer is not None:
-            #===================Moveit Interface==================
-            arm_controller.connect_tf(self.tf_buffer)
         key = cv2.waitKey(1) & 0xFF
 
         if key != 255:
@@ -346,7 +349,6 @@ class CameraDriver(Node):
         if key == 27:
             return True # Escape key
         # Get pose
-        pose = self.get_current_pose()
         if key == 2490368 or key in (ord('w'), ord('W')): # Up
             pose.pose.position.z += self.step
         if key == 2621440 or key in (ord('s'), ord('S')): # Down
@@ -530,224 +532,12 @@ def build_pose(
 
     return pose
 
-class ArmController(Node):
-    def __init__(self):
-        super().__init__('arm_controller')
-        #===================TF Interface=======================
-        self.tf_buffer = None
-        self.tf_listener = None
-        #===================Moveit Interface===================
-        self.move_group_client = ActionClient(
-            self,
-            MoveGroup,
-            "/move_action"
-        )
-        #===================Joint State Buffer=================
-        self.latest_joint_state = None
-
-        self.joint_state_sub = self.create_subscription(
-            JointState,
-            "/joint_states",
-            self.joint_state_callback,
-            10
-        )
-    def connect_tf(self, tf_buffer):
-        self.tf_buffer = tf_buffer
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-
-    def joint_state_callback(self, msg: JointState):
-        self.latest_joint_state = msg
-
-    def move_to_pose(self, target_pose):
-        if target_pose is None:
-            return
-        if self.latest_joint_state is None:
-            self.get_logger().warn("Empty Joint State Buffer")
-            return
-        # Wait for moveit server
-        self.move_group_client.wait_for_server()
-
-        # Create constraints for move goal
-        constraints = Constraints()
-        # ===================Position Constraints===============
-        position_constraint = PositionConstraint()
-
-        position_constraint.header.frame_id = "base_link"
-        position_constraint.link_name = "suction_link"
-
-        primitive = SolidPrimitive()
-        primitive.type = SolidPrimitive.BOX
-        primitive.dimensions = [0.005, 0.005, 0.005]        
-
-        box_pose = Pose()
-        box_pose.position.x = target_pose.pose.position.x
-        box_pose.position.y = target_pose.pose.position.y
-        box_pose.position.z = target_pose.pose.position.z
-
-        position_constraint.constraint_region.primitives.append(
-            primitive
-        )
-
-        position_constraint.constraint_region.primitive_poses.append(
-            box_pose
-        )
-
-        position_constraint.weight = 1.0
-
-        #====================Orientation Constraint=================
-        orientation_constraint = OrientationConstraint()
-
-        orientation_constraint.header.frame_id = "base_link"
-
-        orientation_constraint.link_name = "suction_link"
-
-        orientation_constraint.orientation = (
-            target_pose.pose.orientation
-        )
-
-        orientation_constraint.absolute_x_axis_tolerance = 0.1
-        orientation_constraint.absolute_y_axis_tolerance = 0.1
-        orientation_constraint.absolute_z_axis_tolerance = 0.1
-
-        orientation_constraint.weight = 1.0
-
-        # Combine constraints
-        constraints.position_constraints.append(
-            position_constraint
-        )
-
-        constraints.orientation_constraints.append(
-            orientation_constraint
-        )
-
-        # Motion Plan Request
-        request = MotionPlanRequest()
-
-        request.group_name = "arm_1"
-
-        request.start_state.is_diff = True
-        request.start_state.joint_state = self.latest_joint_state
-        request.goal_constraints.append(
-            constraints
-        )
-
-        request.planner_id = "RRTConnectkConfigDefault"
-
-        request.num_planning_attempts = 10
-
-        request.allowed_planning_time = 5.0
-
-        # MoveGroup Goal
-        goal = MoveGroup.Goal()
-
-        # Only plan the move
-        goal.planning_options = PlanningOptions()
-        goal.planning_options.plan_only = True
-
-        goal.request = request
-
-        future = self.move_group_client.send_goal_async(
-            goal
-        )
-
-        rclpy.spin_until_future_complete(
-            self,
-            future
-        )
-
-        goal_handle = future.result()
-
-        if not goal_handle.accepted:
-            self.get_logger().error(
-                "MoveGroup goal rejected"
-            )
-            return False
-
-        result_future = goal_handle.get_result_async()
-
-        rclpy.spin_until_future_complete(
-            self,
-            result_future
-        )
-
-        response = result_future.result()
-
-        if response is None:
-            self.get_logger().error("No response from MoveGroup action")
-            return
-
-        result = response.result
-
-        if result is None:
-            self.get_logger().error("No MoveIt result inside response")
-            return
-
-        if result.error_code.val == 1:
-            self.get_logger().info("Motion succeeded")
-
-        pass
-
-    def get_current_pose(
-            self,
-            tool_frame="suction_link",
-            base_frame="base_link"):
-        if self.tf_buffer is None:
-            return None
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                base_frame,
-                tool_frame,
-                rclpy.time.Time()
-            )
-
-            pose = PoseStamped()
-
-            pose.header.frame_id = base_frame
-            pose.header.stamp = self.get_clock().now().to_msg()
-
-            pose.pose.position.x = transform.transform.translation.x
-            pose.pose.position.y = transform.transform.translation.y
-            pose.pose.position.z = transform.transform.translation.z
-
-            pose.pose.orientation.x = transform.transform.rotation.x
-            pose.pose.orientation.y = transform.transform.rotation.y
-            pose.pose.orientation.z = transform.transform.rotation.z
-            pose.pose.orientation.w = transform.transform.rotation.w
-
-            return pose
-
-        except Exception as e:
-            self.get_logger().error(
-                f"Failed to get current pose: {e}"
-            )
-            return None
-
-    def execute_pick_sequence(self, target_pose):
-
-        home = self.get_current_pose()
-
-        approach = copy.deepcopy(target_pose)
-        approach.pose.position.z += 0.10
-
-        self.move_to_pose(approach)
-
-        #self.move_to_pose(target_pose)
-
-        #self.perform_action()
-
-        #self.move_to_pose(approach)
-
-        #self.move_to_pose(home)
-
 def main(args=None):
-    global arm_controller
     rclpy.init(args=args)
     node = CameraDriver()
-    arm_controller = ArmController()
     try:
         while not node.complete:
             rclpy.spin_once(node)  # Keep the node alive
-            rclpy.spin_once(arm_controller)
     except KeyboardInterrupt:
         pass
     finally:

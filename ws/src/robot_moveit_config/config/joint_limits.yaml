@@ -13,11 +13,15 @@ joint_limits:
     max_velocity: 2.094395102
     has_acceleration_limits: false
     max_acceleration: 0
+    min_position: -4.71238898
+    max_position: 0.0
   arm_1_joint_2:
     has_velocity_limits: true
     max_velocity: 2.094395102
     has_acceleration_limits: false
     max_acceleration: 0
+    min_position: -0.26179939
+    max_position: 1.57079633
   arm_1_joint_3:
     has_velocity_limits: true
     max_velocity: 3.1415926535000001
