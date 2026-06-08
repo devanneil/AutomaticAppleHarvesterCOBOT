@@ -30,6 +30,8 @@ public:
             move_group_->getRobotModel());
 
         visual_tools_->loadRemoteControl();
+
+        move_group_->getCurrentState();
     }
 
 private:
