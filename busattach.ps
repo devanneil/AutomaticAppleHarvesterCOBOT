@@ -1,0 +1,2 @@
+$device = usbipd list | Select-String "CP210" | ForEach-Object { ($_ -split '\s+')[0] }
+usbipd wsl attach --busid $device
