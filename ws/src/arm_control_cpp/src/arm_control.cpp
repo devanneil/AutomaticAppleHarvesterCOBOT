@@ -6,6 +6,7 @@
 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit_visual_tools/moveit_visual_tools.h>
+#include <moveit/robot_trajectory/robot_trajectory.h>
 
 class ArmController : public rclcpp::Node
 {
@@ -15,9 +16,9 @@ public:
             "/cam_drive_control/apple_location",
             10,
             std::bind( &ArmController::appleCallback, this, std::placeholders::_1));
-        timer_ = create_wall_timer(
-            std::chrono::seconds(1),
-            std::bind(&ArmController::executePickSequence, this));
+        // timer_ = create_wall_timer(
+        //     std::chrono::seconds(1),
+        //     std::bind(&ArmController::executePickSequence, this));
     }
 
     void initializeMoveIt() {
@@ -30,16 +31,24 @@ public:
             move_group_->getRobotModel());
 
         visual_tools_->loadRemoteControl();
+        visual_tools_->deleteAllMarkers();
+        visual_tools_->loadTrajectoryPub();
 
-        move_group_->getCurrentState();
+        move_group_->getCurrentPose("suction_link");
+
+        RCLCPP_INFO(
+            get_logger(),
+            "EEF link: %s",
+            move_group_->getEndEffectorLink().c_str());
+
     }
+
+    void executePickSequence();
 
 private:
     void appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
-    void executePickSequence();
-
-    bool moveToPose(const geometry_msgs::msg::PoseStamped& target);
+    bool moveToPose(const geometry_msgs::msg::PoseStamped& target, std::string end_effector);
 
     geometry_msgs::msg::PoseStamped::SharedPtr last_apple_pose_;
 
@@ -87,7 +96,8 @@ void ArmController::appleCallback(const geometry_msgs::msg::PoseStamped::SharedP
 }
 
 bool ArmController::moveToPose(
-    const geometry_msgs::msg::PoseStamped& target)
+    const geometry_msgs::msg::PoseStamped& target,
+    const std::string end_effector = "suction_link")
 {   
     if (!move_group_)
     {
@@ -96,8 +106,12 @@ bool ArmController::moveToPose(
             "MoveGroup not initialized");
         return false;
     }
-    move_group_->setPoseTarget(target);
-
+    move_group_->setPoseTarget(target, end_effector);
+    RCLCPP_INFO(get_logger(),
+        "Goal pose: x=%f y=%f z=%f",
+        target.pose.position.x,
+        target.pose.position.y,
+        target.pose.position.z);
     moveit::planning_interface::MoveGroupInterface::Plan plan;
 
     bool success =
@@ -105,14 +119,25 @@ bool ArmController::moveToPose(
          moveit::core::MoveItErrorCode::SUCCESS);
 
     if (!success)
+    {
+        RCLCPP_WARN(get_logger(), "GOAL REJECTED!");
         return false;
+    }
 
-    visual_tools_->publishTrajectoryLine(
-        plan.trajectory_,
-        move_group_->getCurrentState()
-            ->getJointModelGroup("arm_1"));
+    const auto& first =
+        plan.trajectory_.joint_trajectory.points.front();
 
-    visual_tools_->trigger();
+    const auto& last =
+        plan.trajectory_.joint_trajectory.points.back();
+
+    for (size_t i = 0; i < first.positions.size(); ++i)
+    {
+        RCLCPP_INFO(get_logger(),
+            "Joint %zu: start=%f end=%f",
+            i,
+            first.positions[i],
+            last.positions[i]);
+    }
 
     return true;
 }
@@ -130,40 +155,42 @@ void ArmController::executePickSequence()
             "MoveGroup not initialized");
         return;
     }
-    busy_ = false;
+    busy_ = true;
     auto target = *last_apple_pose_;
 
     last_apple_pose_.reset();
 
-    //auto home = move_group_->getCurrentPose("tool_frame");
-    auto home = create_pose(0.471, 0.274, 1.329, 0.552, -0.445, 0.526, -0.470);
+    auto home = move_group_->getCurrentPose("suction_link");
 
-    auto approach = target;
+    RCLCPP_INFO(get_logger(),
+        "Goal pose: x=%f y=%f z=%f",
+        home.pose.position.x,
+        home.pose.position.y,
+        home.pose.position.z);
+    // auto approach = target;
 
-    approach.pose.position.z += 0.01;
+    // approach.pose.position.z += 0.01;
 
-    RCLCPP_INFO(get_logger(), "Planning approach");
+    // RCLCPP_INFO(get_logger(), "Planning approach");
 
-    moveToPose(approach);
+    // moveToPose(approach);
 
     RCLCPP_INFO(get_logger(), "Planning target");
 
     moveToPose(target);
 
-    // perform_action();
+    // RCLCPP_INFO(
+    //     get_logger(),
+    //     "Planning retreat");
 
-    RCLCPP_INFO(
-        get_logger(),
-        "Planning retreat");
-
-    moveToPose(approach);
+    // moveToPose(approach);
 
     RCLCPP_INFO(
         get_logger(),
         "Planning home");
 
-    moveToPose(home);
-    busy_ = true;
+    //moveToPose(home);
+    busy_ = false;
 }
 
 int main(int argc, char * argv[])
@@ -173,11 +200,71 @@ int main(int argc, char * argv[])
     auto node =
         std::make_shared<ArmController>();
 
+    rclcpp::executors::MultiThreadedExecutor executor;
+
+    executor.add_node(node);
+
+    auto spinner = std::thread([&executor]() {executor.spin(); });
+
     node->initializeMoveIt();
 
-    rclcpp::spin(node);
+    while (rclcpp::ok())
+    {
+        node->executePickSequence();
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(100));
+    }
+    spinner.join();
 
     rclcpp::shutdown();
 
     return 0;
 }
+
+// int main(int argc, char * argv[])
+// {
+//     // Initialize ROS and create the Node
+//     rclcpp::init(argc, argv);
+//     auto const node = std::make_shared<rclcpp::Node>(
+//     "hello_moveit",
+//     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true)
+//     );
+
+//     // Create a ROS logger
+//     auto const logger = rclcpp::get_logger("hello_moveit");
+
+//     // Create the MoveIt MoveGroup Interface
+//     using moveit::planning_interface::MoveGroupInterface;
+//     auto move_group_interface = MoveGroupInterface(node, "arm_1");
+
+//     // Set a target Pose
+//     auto const target_pose = []{
+//     geometry_msgs::msg::Pose msg;
+//     msg.orientation.w = 1.0;
+//     msg.position.x = 0.28;
+//     msg.position.y = -0.2;
+//     msg.position.z = 0.5;
+//     return msg;
+//     }();
+//     move_group_interface.setPoseTarget(target_pose);
+//     move_group_interface.getCurrentPose("suction_link");
+//     // Create a plan to that target pose
+//     auto const [success, plan] = [&move_group_interface]{
+//     moveit::planning_interface::MoveGroupInterface::Plan msg;
+//     auto const ok = static_cast<bool>(move_group_interface.plan(msg));
+//     return std::make_pair(ok, msg);
+//     }();
+
+//     // Execute the plan
+//     if(success) {
+//         //move_group_interface.execute(plan);
+//         RCLCPP_INFO(logger, "Planning Success!");
+//     } else {
+//         RCLCPP_ERROR(logger, "Planing failed!");
+//     }
+
+//     // Shutdown ROS
+//     rclcpp::shutdown();
+//     return 0;
+// }
