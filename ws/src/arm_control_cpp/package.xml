@@ -7,8 +7,6 @@
   <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
   <license>TODO: License declaration</license>
 
-  <depend>memory</depend>
-  <depend>chrono</depend>
   <depend>rclcpp</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>moveit_core</depend>
