@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(suction_commander)
+project(point_cloud_processor)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -7,19 +7,38 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
 find_package(apple_interfaces REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(Eigen REQUIRED)
+find_package(tf2_eigen REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
-add_executable(suction_commander src/suction_commander.cpp)
-ament_target_dependencies(suction_commander 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_compile_definitions(ENABLE_PIPE_TIMING)
+endif()
+add_executable(point_cloud_processor src/point_cloud_processor.cpp)
+ament_target_dependencies(point_cloud_processor 
   rclcpp
   apple_interfaces
+  geometry_msgs
+  sensor_msgs
+  tf2_ros
+  pcl_ros
+  pcl_conversions
+  OpenCV
+  Eigen
+  tf2_eigen
 )
 install(TARGETS
-  suction_commander
+  point_cloud_processor
   DESTINATION lib/${PROJECT_NAME})
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights

@@ -6,6 +6,7 @@ from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import Image, JointState, PointCloud2, CameraInfo
 from geometry_msgs.msg import PoseStamped, Pose, PointStamped
 from sensor_msgs_py import point_cloud2
+from apple_interfaces.msg import AppleConsensus
 import numpy as np
 import cv2
 import torch
@@ -93,7 +94,6 @@ class CameraDriver(Node):
         self.step = 0.01 # WASD step control
         camera_sn = "GDS871PBAA7110621" # Will come from hardware manager
         self.camera_info = None # Visual camera info
-        self.rgbdCamera = None # Visual camera utility
         self.window_name = "Camera"
         self.confidence_threshold = 0.7
         #==================VARIABLES===========================
@@ -110,28 +110,11 @@ class CameraDriver(Node):
             10
         )
 
-        self.camera_info_subscrition = self.create_subscription(
-            CameraInfo,
-            f'/arm1_cam/{camera_sn}/color/camera_info',
-            self.info_callback,
+        self.apple_consensus_pub = self.create_publisher(
+            AppleConsensus,
+            '/arm1/apple_consensus',
             10
         )
-
-        self.apple_location_pub = self.create_publisher(
-            PoseStamped,
-            '/cam_drive_control/apple_location',
-            10
-        )
-        # Sub to depth field from camera, different dimensions from visual
-        self.depth_subscription = self.create_subscription(
-            PointCloud2,
-            f'/arm1_cam/{camera_sn}/depth/points',
-            self.point_callback,
-            10
-        )
-        #===================TF Interface=======================
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
         #===================CV Interface======================
         # Create CV Context
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
@@ -218,22 +201,6 @@ class CameraDriver(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to convert image: {e}")
     
-    # Collect camera info and instantiate camera
-    def info_callback(self, msg: CameraInfo):
-        if self.camera_info is None:
-            self.camera_info = msg
-            self.rgbdCamera = RGBCamera(msg, self.tf_buffer)
-            self.get_logger().info("Captured camera_info")
-
-            # stop subscription after first message
-            self.destroy_subscription(self.camera_info_subscrition)
-    
-    #Set latest cloud to current cloud
-    def point_callback(self, msg: PointCloud2):
-        if self.rgbdCamera is None:
-            return
-        self.rgbdCamera.updateCloud(msg)
-    
     # Mouse callback function
     def mouse_event_handler(self, event, x, y, flags, param):
         if event != cv2.EVENT_LBUTTONDOWN:
@@ -249,9 +216,6 @@ class CameraDriver(Node):
     @timer
     def process_pick(self, x, y):
 
-        if self.rgbdCamera is None or self.results is None:
-            return
-
         result = self.results[0]
 
         for box in result.boxes:
@@ -262,46 +226,20 @@ class CameraDriver(Node):
                 if float(box.conf[0]) < self.confidence_threshold:
                     return
 
-                self.selected_box = (x1, y1, x2, y2)
+                apple_message = AppleConsensus()
+                apple_message.header.stamp = self.get_clock().now().to_msg()
+                apple_message.header.frame_id = "arm1_cam_color_frame"  # or camera frame
 
-                points = self.extract_points_from_box(self.selected_box)
+                # Pixel coordinates of pick
+                apple_message.u1 = int(x1)
+                apple_message.v1 = int(y1)
+                apple_message.u2 = int(x2)
+                apple_message.v2 = int(y2)
 
-                if points is None or len(points) == 0:
-                    return
+                self.apple_consensus_pub.publish(apple_message)
+                
 
-                ax = plt.axes(projection='3d') 
-                ax.scatter(points[:,0], points[:,1], points[:,2], s=1) 
-                plt.show()
-
-                centroid = np.mean(points, axis=0)
-                print(centroid)
-
-                transform = self.tf_buffer.lookup_transform(
-                    'base_link',
-                    self.rgbdCamera.depth_frame_id,
-                    rclpy.time.Time()
-                )
-
-                pt = PointStamped()
-                pt.header.frame_id = self.rgbdCamera.depth_frame_id
-                pt.point.x = float(centroid[0])
-                pt.point.y = float(centroid[1])
-                pt.point.z = float(centroid[2])
-
-                transformed = do_transform_point(pt, transform)
-
-                target_point = np.array([
-                    transformed.point.x,
-                    transformed.point.y,
-                    transformed.point.z
-                ])
-
-                print(target_point)
-
-                target_pose = build_pose(*target_point[:3], 0.7071068, 0.0, 0.7071068, 0.0)
-
-                self.apple_location_pub.publish(target_pose)
-                self.get_logger().info("Published Apple Pose!")
+                
 
 
     # Find 3D points from box consensus  
@@ -359,153 +297,6 @@ class CameraDriver(Node):
             pose.pose.position.x -= self.step
         #DISABLED FOR TESTING / NOT CURRENTLY WORKING
         #self.send_pose_goal(pose, "link_6")
-
-class RGBCamera:
-    """Camera model for parsing real world coordinates from image and depth field"""
-    def __init__(self, camera_info, tf_buffer):
-        #Constants
-        self.width = 640
-        self.height = 480
-        self.fx = camera_info.k[0]
-        self.fy = camera_info.k[4]
-        self.cx = camera_info.k[2]
-        self.cy = camera_info.k[5]
-        self.cam_frame_id = camera_info.header.frame_id
-        self.depth_frame_id = None
-        #Variables
-        self.cloud_msg = None
-        self.xyz_cloud = None
-        self.frame_id = None
-        #Control flag
-        self.processing = False
-        #ROS interface
-        self.tf_buffer = tf_buffer
-    
-    def updateCloud(self, cloud_msg):
-        if self.processing is True:
-            return # Ignore changes while thinking
-        self.cloud_msg = cloud_msg
-
-        if self.depth_frame_id is None:
-            self.depth_frame_id = cloud_msg.header.frame_id
-        
-        pts = np.array(
-            [(p[0], p[1], p[2])
-            for p in point_cloud2.read_points(
-                cloud_msg,
-                field_names=("x","y","z"),
-                skip_nans=False
-            )],
-            dtype=np.float32
-        )
-
-        self.xyz_cloud = pts.reshape(480,640,3)
-        
-    def pixel_to_ray(self, u, v):
-
-        x = (u - self.cx) / self.fx
-        y = (v - self.cy) / self.fy
-
-        ray_cam = np.array([x, y, 1.0])
-        ray_cam /= np.linalg.norm(ray_cam)
-
-        transform = self.tf_buffer.lookup_transform(
-            self.depth_frame_id,
-            self.cam_frame_id,
-            rclpy.time.Time()
-        )
-
-        q = transform.transform.rotation
-
-        R = quat_to_rot_matrix(
-            [q.x, q.y, q.z, q.w]
-        )
-
-        ray_depth = R @ ray_cam
-        ray_depth /= np.linalg.norm(ray_depth)
-
-        origin_depth = np.array([
-            transform.transform.translation.x,
-            transform.transform.translation.y,
-            transform.transform.translation.z
-        ])
-
-        return ray_depth, origin_depth
-
-    # Finds closes point in cloud to image coordinate
-    @timer
-    def find_best_match(self, u, v):
-
-        if self.xyz_cloud is None:
-            return None
-
-        ray, origin = self.pixel_to_ray(u, v)
-
-        best_point = None
-        best_dist = float("inf")
-
-        for col in self.xyz_cloud:
-            for p in col:
-                # skip invalid points
-                if np.linalg.norm(p) < 1e-6:
-                    continue
-
-                # perpendicular distance to ray
-                dist = np.linalg.norm(np.cross(p, ray))
-
-                # optional: ensure point is in front of camera
-                if np.dot(p - origin, ray) <= 0:
-                    continue
-
-                if dist < best_dist:
-                    best_dist = dist
-                    best_point = p
-
-        return best_point, best_dist
-
-    # Finds real world coordinates for rectangle region from consensus image
-    @timer
-    def find_rect_consensus(self, box, buffer = 0.1, frame_id=None):
-        if self.xyz_cloud is None:
-            return None
-
-        self.processing = True
-        x1, y1, x2, y2 = map(int, box)
-
-        c1, _ = self.find_best_match(x1, y1)
-        c2, _ = self.find_best_match(x2, y2)
-
-        if c1 is None or c2 is None:
-            return None
-
-        x_min = min(c1[0], c2[0]) - buffer
-        y_min = min(c1[1], c2[1]) - buffer
-
-        x_max = max(c1[0], c2[0]) + buffer
-        y_max = max(c1[1], c2[1]) + buffer
-
-        xs = self.xyz_cloud[:, :, 0]
-        ys = self.xyz_cloud[:, :, 1]
-        zs = self.xyz_cloud[:, :, 2]
-
-        mask = (
-            (xs > x_min) & (xs < x_max) &
-            (ys > y_min) & (ys < y_max)
-        )
-
-        points = self.xyz_cloud[mask]
-
-        self.processing = False
-        return np.array(points)
-
-def quat_to_rot_matrix(q):
-    x, y, z, w = q
-
-    return np.array([
-        [1 - 2*(y*y + z*z),     2*(x*y - z*w),     2*(x*z + y*w)],
-        [2*(x*y + z*w),         1 - 2*(x*x + z*z), 2*(y*z - x*w)],
-        [2*(x*z - y*w),         2*(y*z + x*w),     1 - 2*(x*x + y*y)]
-    ])
 
 def build_pose(
         x,
