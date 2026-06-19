@@ -3,22 +3,34 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
 
+const std::string ARM_NUM = "arm1";
 class ArmController : public rclcpp::Node
 {
 public:
     ArmController() : Node("arm_controller") {
+        std::string apple_pose_topic = "/" + ARM_NUM + "/apple_locations";
         apple_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/cam_drive_control/apple_location",
+            apple_pose_topic,
             10,
             std::bind( &ArmController::appleCallback, this, std::placeholders::_1));
         // timer_ = create_wall_timer(
         //     std::chrono::seconds(1),
         //     std::bind(&ArmController::executePickSequence, this));
+        execute_service_ =
+            create_service<std_srvs::srv::SetBool>(
+                "execute_plan",
+                std::bind(
+                    &ArmController::executePlanService,
+                    this,
+                    std::placeholders::_1,
+                    std::placeholders::_2,
+                    std::placeholders::_3));
     }
 
     void initializeMoveIt() {
@@ -50,13 +62,20 @@ private:
 
     bool moveToPose(const geometry_msgs::msg::PoseStamped& target, std::string end_effector);
 
+    void executePlanService(
+        const std::shared_ptr<rmw_request_id_t> request_header,
+        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+        std::shared_ptr<std_srvs::srv::SetBool::Response> response
+    );
     geometry_msgs::msg::PoseStamped::SharedPtr last_apple_pose_;
 
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr apple_sub_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr execute_service_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
+    moveit::planning_interface::MoveGroupInterface::Plan plan;
 
     std::shared_ptr<moveit_visual_tools::MoveItVisualTools> visual_tools_;
 
@@ -112,7 +131,6 @@ bool ArmController::moveToPose(
         target.pose.position.x,
         target.pose.position.y,
         target.pose.position.z);
-    moveit::planning_interface::MoveGroupInterface::Plan plan;
 
     bool success =
         (move_group_->plan(plan) ==
@@ -123,6 +141,8 @@ bool ArmController::moveToPose(
         RCLCPP_WARN(get_logger(), "GOAL REJECTED!");
         return false;
     }
+
+    //move_group_->execute(plan);
 
     const auto& first =
         plan.trajectory_.joint_trajectory.points.front();
@@ -141,7 +161,23 @@ bool ArmController::moveToPose(
 
     return true;
 }
-
+void ArmController::executePlanService(
+        const std::shared_ptr<rmw_request_id_t> request_header,
+        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+        std::shared_ptr<std_srvs::srv::SetBool::Response> response
+    )
+{
+    if (request->data) {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: TRUE");
+        move_group_->execute(plan);
+        response->success = true;
+        response->message = "Boolean was TRUE, action completed.";
+    } else {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: FALSE");
+        response->success = false;
+        response->message = "Boolean was FALSE, no action taken.";
+    }
+}
 void ArmController::executePickSequence()
 {
     if (!last_apple_pose_)
@@ -163,7 +199,7 @@ void ArmController::executePickSequence()
     auto home = move_group_->getCurrentPose("suction_link");
 
     RCLCPP_INFO(get_logger(),
-        "Goal pose: x=%f y=%f z=%f",
+        "Home pose: x=%f y=%f z=%f",
         home.pose.position.x,
         home.pose.position.y,
         home.pose.position.z);
@@ -176,7 +212,7 @@ void ArmController::executePickSequence()
     // moveToPose(approach);
 
     RCLCPP_INFO(get_logger(), "Planning target");
-
+    target.pose.position.x -= 0.2;
     moveToPose(target);
 
     // RCLCPP_INFO(

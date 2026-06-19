@@ -13,6 +13,7 @@ find_package(moveit_core REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(moveit_visual_tools REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -24,6 +25,7 @@ ament_target_dependencies(arm_control
   moveit_msgs
   moveit_visual_tools
   geometry_msgs
+  std_srvs
 )
 install(TARGETS
   arm_control

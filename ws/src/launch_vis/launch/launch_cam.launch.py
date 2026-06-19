@@ -21,11 +21,11 @@ def generate_launch_description():
             "sn": "GDS871PBAA7110621",
             "param_file": "arm1_cam.yaml",
         },
-        {
-            "name": "scout1_cam",
-            "sn": "GDS871PBAA7110753",
-            "param_file": "scout1_cam.yaml",
-        },
+        # {
+        #     "name": "scout1_cam",
+        #     "sn": "GDS871PBAA7110753",
+        #     "param_file": "scout1_cam.yaml",
+        # },
     ]
 
     composable_nodes = []
