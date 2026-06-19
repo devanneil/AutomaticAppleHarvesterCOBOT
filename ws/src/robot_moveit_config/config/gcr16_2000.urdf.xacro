@@ -3,7 +3,7 @@
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
 
     <!-- Import gcr16_2000 urdf file -->
-    <xacro:include filename="$(find robot_moveit_config)/config/gcr16_2000.urdf" />
+    <xacro:include filename="$(find robot_model)/urdf/gcr16_2000.urdf" />
 
     <!-- Import control_xacro -->
     <xacro:include filename="gcr16_2000.ros2_control.xacro" />

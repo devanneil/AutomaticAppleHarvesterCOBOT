@@ -1,13 +1,13 @@
 moveit_setup_assistant_config:
   urdf:
-    package: robot_moveit_config
-    relative_path: config/gcr16_2000.urdf
+    package: robot_model
+    relative_path: urdf/gcr16_2000.urdf
   srdf:
     relative_path: config/gcr16_2000.srdf
   package_settings:
     author_name: Devan Neil
     author_email: devanneil2004@gmail.com
-    generated_timestamp: 1781726772
+    generated_timestamp: 1781897540
   control_xacro:
     command:
       - position
