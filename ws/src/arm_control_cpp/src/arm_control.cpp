@@ -22,15 +22,24 @@ public:
         // timer_ = create_wall_timer(
         //     std::chrono::seconds(1),
         //     std::bind(&ArmController::executePickSequence, this));
-        execute_service_ =
-            create_service<std_srvs::srv::SetBool>(
-                "execute_plan",
-                std::bind(
-                    &ArmController::executePlanService,
-                    this,
-                    std::placeholders::_1,
-                    std::placeholders::_2,
-                    std::placeholders::_3));
+        // execute_service_ =
+        //     create_service<std_srvs::srv::SetBool>(
+        //         "execute_plan",
+        //         std::bind(
+        //             &ArmController::executePlanService,
+        //             this,
+        //             std::placeholders::_1,
+        //             std::placeholders::_2,
+        //             std::placeholders::_3));
+        // home_service_ =
+        //     create_service<std_srvs::srv::SetBool>(
+        //         "move_to_home",
+        //         std::bind(
+        //             &ArmController::moveToHome,
+        //             this,
+        //             std::placeholders::_1,
+        //             std::placeholders::_2,
+        //             std::placeholders::_3));
     }
 
     void initializeMoveIt() {
@@ -60,17 +69,25 @@ public:
 private:
     void appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
-    bool moveToPose(const geometry_msgs::msg::PoseStamped& target, std::string end_effector);
+    bool moveToPose(const geometry_msgs::msg::PoseStamped& target, bool blocking, std::string end_effector);
 
     void executePlanService(
         const std::shared_ptr<rmw_request_id_t> request_header,
         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
         std::shared_ptr<std_srvs::srv::SetBool::Response> response
     );
+    void moveToHome(
+        const std::shared_ptr<rmw_request_id_t> request_header,
+        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+        std::shared_ptr<std_srvs::srv::SetBool::Response> response
+    );
+
     geometry_msgs::msg::PoseStamped::SharedPtr last_apple_pose_;
+    geometry_msgs::msg::PoseStamped::SharedPtr home_;
 
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr apple_sub_;
-    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr execute_service_;
+    //rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr execute_service_;
+    //rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr home_service_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
@@ -116,7 +133,9 @@ void ArmController::appleCallback(const geometry_msgs::msg::PoseStamped::SharedP
 
 bool ArmController::moveToPose(
     const geometry_msgs::msg::PoseStamped& target,
-    const std::string end_effector = "suction_link")
+    bool blocking = true,
+    const std::string end_effector = "suction_link"
+    )
 {   
     if (!move_group_)
     {
@@ -141,43 +160,67 @@ bool ArmController::moveToPose(
         RCLCPP_WARN(get_logger(), "GOAL REJECTED!");
         return false;
     }
-
-    //move_group_->execute(plan);
-
-    const auto& first =
-        plan.trajectory_.joint_trajectory.points.front();
-
-    const auto& last =
-        plan.trajectory_.joint_trajectory.points.back();
-
-    for (size_t i = 0; i < first.positions.size(); ++i)
+    else
     {
-        RCLCPP_INFO(get_logger(),
-            "Joint %zu: start=%f end=%f",
-            i,
-            first.positions[i],
-            last.positions[i]);
+        if(blocking) visual_tools_->prompt("Execute planned trajectory?");
+        return move_group_->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS;
     }
+    //auto result = move_group_->execute(plan);
 
-    return true;
+    // if (result != moveit::core::MoveItErrorCode::SUCCESS)
+    // {
+    //     RCLCPP_ERROR(get_logger(), "Execution failed!");
+    //     return false;
+    // }
+
+    // const auto& first =
+    //     plan.trajectory_.joint_trajectory.points.front();
+
+    // const auto& last =
+    //     plan.trajectory_.joint_trajectory.points.back();
+
+    // for (size_t i = 0; i < first.positions.size(); ++i)
+    // {
+    //     RCLCPP_INFO(get_logger(),
+    //         "Joint %zu: start=%f end=%f",
+    //         i,
+    //         first.positions[i],
+    //         last.positions[i]);
+    // }
+
+    return false;
 }
-void ArmController::executePlanService(
-        const std::shared_ptr<rmw_request_id_t> request_header,
-        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-        std::shared_ptr<std_srvs::srv::SetBool::Response> response
-    )
-{
-    if (request->data) {
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: TRUE");
-        move_group_->execute(plan);
-        response->success = true;
-        response->message = "Boolean was TRUE, action completed.";
-    } else {
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: FALSE");
-        response->success = false;
-        response->message = "Boolean was FALSE, no action taken.";
-    }
-}
+// void ArmController::executePlanService(
+//         const std::shared_ptr<rmw_request_id_t> request_header,
+//         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+//         std::shared_ptr<std_srvs::srv::SetBool::Response> response
+//     )
+// {
+//     if (request->data) {
+//         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: TRUE");
+//         move_group_->execute(plan);
+//         response->success = true;
+//         response->message = "Boolean was TRUE, action completed.";
+//     } else {
+//         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: FALSE");
+//         response->success = false;
+//         response->message = "Boolean was FALSE, no action taken.";
+//     }
+// }
+// void ArmController::moveToHome(
+//         const std::shared_ptr<rmw_request_id_t> request_header,
+//         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+//         std::shared_ptr<std_srvs::srv::SetBool::Response> response
+//     ) {
+//         if (request->data) {
+//             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: TRUE");
+//             moveToPose(*home_);
+//             response->message = "Boolean was TRUE, action completed.";
+//         } else {
+//             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Received: FALSE");
+//             moveToPose(*home_);
+//         }
+//     }
 void ArmController::executePickSequence()
 {
     if (!last_apple_pose_)
@@ -196,36 +239,51 @@ void ArmController::executePickSequence()
 
     last_apple_pose_.reset();
 
-    auto home = move_group_->getCurrentPose("suction_link");
+    auto current_pose = move_group_->getCurrentPose("suction_link");
+    home_ = std::make_shared<geometry_msgs::msg::PoseStamped>(current_pose);
 
     RCLCPP_INFO(get_logger(),
         "Home pose: x=%f y=%f z=%f",
-        home.pose.position.x,
-        home.pose.position.y,
-        home.pose.position.z);
-    // auto approach = target;
+        home_->pose.position.x,
+        home_->pose.position.y,
+        home_->pose.position.z);
 
-    // approach.pose.position.z += 0.01;
+    auto approach = target;
 
-    // RCLCPP_INFO(get_logger(), "Planning approach");
+    approach.pose.position.x -= 0.2;
 
-    // moveToPose(approach);
+    RCLCPP_INFO(get_logger(), "Planning approach");
+
+    if(!moveToPose(approach, true)) {
+        moveToPose(*home_, true);
+        RCLCPP_WARN(get_logger(), "FAILED TO APPROACH");
+        return;
+    }
 
     RCLCPP_INFO(get_logger(), "Planning target");
-    target.pose.position.x -= 0.2;
-    moveToPose(target);
 
-    // RCLCPP_INFO(
-    //     get_logger(),
-    //     "Planning retreat");
+    target.pose.position.x -= 0.1;
+    if(!moveToPose(target, true)) {
+        moveToPose(*home_, true);
+        RCLCPP_WARN(get_logger(), "FAILED TO TARGET");
+        return;
+    }
 
-    // moveToPose(approach);
+    RCLCPP_INFO(
+        get_logger(),
+        "Planning retreat");
+
+    if(!moveToPose(approach, false)) {
+        moveToPose(*home_, true);
+        RCLCPP_WARN(get_logger(), "FAILED TO RETREAT");
+        return;
+    }
 
     RCLCPP_INFO(
         get_logger(),
         "Planning home");
 
-    //moveToPose(home);
+    moveToPose(*home_, true);
     busy_ = false;
 }
 
