@@ -218,14 +218,22 @@ class CameraDriver(Node):
 
         result = self.results[0]
 
+        self.get_logger().info(
+            f"orig_shape={result.orig_shape}"
+        )
+
         for box in result.boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+
 
             if x1 <= x <= x2 and y1 <= y <= y2:
 
                 if float(box.conf[0]) < self.confidence_threshold:
                     return
 
+                self.get_logger().info(
+                    f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
+                )
                 apple_message = AppleConsensus()
                 apple_message.header.stamp = self.get_clock().now().to_msg()
                 apple_message.header.frame_id = "arm1_cam_color_frame"  # or camera frame
