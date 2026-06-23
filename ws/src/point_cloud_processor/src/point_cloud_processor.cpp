@@ -7,6 +7,7 @@
 #include <std_msgs/msg/header.hpp>
 
 #include <opencv2/opencv.hpp>
+#include <cv_bridge/cv_bridge.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -23,6 +24,7 @@
 #include <queue>
 #include <thread>
 #include <condition_variable>
+#include <limits>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -62,7 +64,7 @@ public:
         CAM_FRAME_ID = get_parameter("cam_frame_id").as_string();
         declare_parameter<std::string>(
             "depth_frame_id",
-            "arm1_cam_points_frame"
+            "arm1_cam_transformedDepth_frame"
         );
         DEPTH_FRAME_ID = get_parameter("depth_frame_id").as_string();
         declare_parameter<int>(
@@ -99,19 +101,32 @@ public:
         wall_normal.normalize();
         outward_normal.normalize();
         // Subscribers
-        std::string cloud_topic = "/" + ARM_NUM + "_cam/" + CAM_SN + "/depth/points";
-        cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+        std::string cloud_topic = "/" + ARM_NUM + "_cam/" + CAM_SN + "/transformedDepth/image_raw";
+        depth_image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             cloud_topic,
             10,
-            std::bind(&ConsensusExtractorNode::cloudCallback, this, std::placeholders::_1)
+            std::bind(&ConsensusExtractorNode::depthCallback, this, std::placeholders::_1)
         );
 
-        std::string info_topic = "/" + ARM_NUM + "_cam/" + CAM_SN + "/color/camera_info";
-        cam_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-            info_topic,
+        std::string depth_info_topic = "/" + ARM_NUM + "_cam/" + CAM_SN + "/transformedDepth/camera_info";
+        depth_info_sub_= this->create_subscription<sensor_msgs::msg::CameraInfo>(
+            depth_info_topic,
             10,
-            std::bind(&ConsensusExtractorNode::camInfoCallback, this, std::placeholders::_1)
+            std::bind(&ConsensusExtractorNode::depthInfoCallback, this, std::placeholders::_1)
         );
+
+        std::string vis_cloud_topic = "/" + ARM_NUM + "_cam/" + CAM_SN + "/depth/points";
+        depth_vis_sub_= this->create_subscription<sensor_msgs::msg::PointCloud2>(
+            vis_cloud_topic,
+            10,
+            std::bind(&ConsensusExtractorNode::publishVizCloud, this, std::placeholders::_1)
+        );
+        // std::string info_topic = "/" + ARM_NUM + "_cam/" + CAM_SN + "/color/camera_info";
+        // cam_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+        //     info_topic,
+        //     10,
+        //     std::bind(&ConsensusExtractorNode::camInfoCallback, this, std::placeholders::_1)
+        // );
 
         std::string consensus_topic = "/" + ARM_NUM + "/apple_consensus";
         consensus_sub_ = this->create_subscription<apple_interfaces::msg::AppleConsensus> (
@@ -133,10 +148,10 @@ public:
             10
         );
         // Compressed point cloud sub
-        vis_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(2000), // .5 Hz
-            std::bind(&ConsensusExtractorNode::publishVizCloud, this)
-        );
+        // vis_timer_ = this->create_wall_timer(
+        //     std::chrono::milliseconds(2000), // .5 Hz
+        //     std::bind(&ConsensusExtractorNode::publishVizCloud, this)
+        // );
         // TF Interface
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -166,12 +181,9 @@ public:
 
         // Initialize variables
         K_ = cv::Mat::eye(3, 3, CV_32F);
-        latest_cloud_ = nullptr;
+        latest_depth_ = cv::Mat();
+        depth_initialized = false;
         running_ = true;
-
-        cloud_buffer_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-        latest_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-        cloud_buffer_.reset(new pcl::PointCloud<pcl::PointXYZ>());
     }
     ~ConsensusExtractorNode()
     {
@@ -206,9 +218,11 @@ private:
     Eigen::Vector3d wall_normal;
     Eigen::Vector3d outward_normal;
     // ===== ROS =====
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_image_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr depth_info_sub_;
+    //rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
     rclcpp::Subscription<apple_interfaces::msg::AppleConsensus>::SharedPtr consensus_sub_; // replace with your msg
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr depth_vis_sub_;
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr ref_point_cloud_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr apple_pose_pub_;
@@ -233,9 +247,9 @@ private:
     float cy_;
 
     // ===== Point cloud state =====
-    std::mutex cloud_mutex_;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_buffer_;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr latest_cloud_;
+    cv::Mat latest_depth_;
+    std::mutex depth_mutex_;
+    bool depth_initialized;
 
     // ===== Job queue =====
     std::queue<ConsensusJob> job_queue_;
@@ -248,59 +262,39 @@ private:
 
 private:
     // callbacks
-    void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void camInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
+    void depthCallback(const sensor_msgs::msg::Image::SharedPtr msg);
+    void depthInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
+    //void camInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
     void consensusCallback(const apple_interfaces::msg::AppleConsensus::SharedPtr msg); // replace type
     void checkTfReady();
-    void publishVizCloud();
+    void publishVizCloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
 
     // workers
     void workerLoop();
 
     // processing
-    void processJob(const ConsensusJob& job, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_msg);
+    void processJob(const ConsensusJob& job);
 
     // geometry
-    Eigen::Vector3f cornerToRay(const cv::Point2f& c1);
     pcl::PointCloud<pcl::PointXYZ>::Ptr extractROI(
-        const std::vector<Eigen::Vector3f>& cornersRay,
-        const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
+        const std::vector<cv::Point2f>& corners,
+        const cv::Mat& cloud);
 
     // utils
     pcl::PointCloud<pcl::PointXYZ>::Ptr getLatestCloud();
 };
-void ConsensusExtractorNode::cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+void ConsensusExtractorNode::depthCallback(
+    const sensor_msgs::msg::Image::SharedPtr msg)
 {
-    std::lock_guard<std::mutex> lock(cloud_mutex_);
+    std::lock_guard<std::mutex> lock(depth_mutex_);
 
-    cloud_buffer_->clear();
-    pcl::fromROSMsg(*msg, *cloud_buffer_);
-    std::vector<int> indices;
-    pcl::removeNaNFromPointCloud(*cloud_buffer_, *cloud_buffer_, indices);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr filtered(new pcl::PointCloud<pcl::PointXYZ>);
+    cv_bridge::CvImagePtr cv_ptr =
+        cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_16UC1);
 
-    for (const auto& p : cloud_buffer_->points)
-    {
-        if (!pcl::isFinite(p))
-            continue;
-
-        if (p.x == 0 && p.y == 0 && p.z == 0)
-            continue;
-
-        if (std::abs(p.x) < 1e-4 &&
-            std::abs(p.y) < 1e-4 &&
-            std::abs(p.z) < 1e-4)
-            continue;
-
-        if (p.z < 0.15f || p.z > 6.0f)
-            continue;
-
-        filtered->push_back(p);
-    }
-
-    std::swap(filtered, latest_cloud_);
+    latest_depth_ = cv_ptr->image.clone();
+    depth_initialized = true;
 }
-void ConsensusExtractorNode::camInfoCallback(
+void ConsensusExtractorNode::depthInfoCallback(
     const sensor_msgs::msg::CameraInfo::SharedPtr msg)
 {
     if (camera_initialized) return;
@@ -339,7 +333,7 @@ void ConsensusExtractorNode::camInfoCallback(
         msg->k[4],
         msg->k[5]);
 
-    cam_info_sub_.reset();
+    depth_info_sub_.reset();
 }
 void ConsensusExtractorNode::consensusCallback(const apple_interfaces::msg::AppleConsensus::SharedPtr msg) {
     uint32_t u1 = msg->u1;
@@ -390,8 +384,8 @@ void ConsensusExtractorNode::checkTfReady()
 
         geometry_msgs::msg::TransformStamped tf_msg =
             tf_buffer_->lookupTransform(
-                DEPTH_FRAME_ID,
                 CAM_FRAME_ID,
+                DEPTH_FRAME_ID,
                 tf2::TimePointZero
             );
 
@@ -414,31 +408,28 @@ void ConsensusExtractorNode::checkTfReady()
         );
     }
 }
-void ConsensusExtractorNode::publishVizCloud()
+void ConsensusExtractorNode::publishVizCloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+    pcl::PCLPointCloud2 pcl_cloud;
+    pcl_conversions::toPCL(*msg, pcl_cloud);
 
-    {
-        std::lock_guard<std::mutex> lock(cloud_mutex_);
-        if (!latest_cloud_) return;
-        cloud = latest_cloud_;
-    }
+    auto cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    pcl::fromPCLPointCloud2(pcl_cloud, *cloud);
 
-    if (cloud->empty()) return;
-
+    if (cloud->empty()) {
+        return;
+    };
     // Optional: voxel downsample (HIGHLY recommended for RViz)
     pcl::VoxelGrid<pcl::PointXYZ> voxel;
     pcl::PointCloud<pcl::PointXYZ>::Ptr filtered(new pcl::PointCloud<pcl::PointXYZ>);
-
     voxel.setInputCloud(cloud);
     voxel.setLeafSize(0.01f, 0.01f, 0.01f); // tune for speed vs detail
     voxel.filter(*filtered);
-
     sensor_msgs::msg::PointCloud2 out_msg;
     pcl::toROSMsg(*filtered, out_msg);
 
     out_msg.header.stamp = this->now();
-    out_msg.header.frame_id = "arm1_cam_points_frame";
+    out_msg.header.frame_id = msg->header.frame_id;
 
     ref_point_cloud_pub_->publish(out_msg);
 }
@@ -484,24 +475,10 @@ void ConsensusExtractorNode::workerLoop()
             continue;
         }
 
-        // Ensure cloud exists
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_msg;
-
-        {
-            std::lock_guard<std::mutex> lock(cloud_mutex_);
-
-            if (!latest_cloud_)
-            {
-                continue;
-            }
-
-            cloud_msg = latest_cloud_;
-        }
-
         try
         {
             // Process the consensus job
-            processJob(job, cloud_msg);
+            processJob(job);
         }
         catch (const std::exception& e)
         {
@@ -515,52 +492,39 @@ void ConsensusExtractorNode::workerLoop()
 }
 
 // processing
-void ConsensusExtractorNode::processJob(const ConsensusJob& job, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_msg)
-{   
-    #ifdef ENABLE_PIPE_TIMING
-    auto t_start = std::chrono::steady_clock::now();
-    RCLCPP_INFO(get_logger(), "Worker Consumed Job!");
-    #endif
-    if (cloud_msg->size() == 0) {
-        RCLCPP_ERROR(get_logger(), "Cloud size 0!");
-        return;
+void ConsensusExtractorNode::processJob(const ConsensusJob& job)
+{
+    cv::Mat depth;
+    {
+        std::lock_guard<std::mutex> lock(depth_mutex_);
+        depth = latest_depth_.clone();
     }
-    // Extract region of interest
-    cv::Point2d c1_close = job.c1;
-    cv::Point2d c2_close = job.c2;
-    int distX = job.c1.x - job.c2.x;
-    int distY = job.c1.y - job.c2.y;
-    c1_close.x -= distX * 0.75;
-    c1_close.y -= distY * 0.75;
-    c2_close.x += distX * 0.75;
-    c2_close.y += distY * 0.75;
-    RCLCPP_INFO(get_logger(), "C1: %f, %f", job.c1.x, job.c1.y);
-    RCLCPP_INFO(get_logger(), "C2: %f, %f", job.c2.x, job.c2.y);
-    std::vector<Eigen::Vector3f> rectangle = {cornerToRay(job.c1), cornerToRay(job.c2)};
-    pcl::PointCloud<pcl::PointXYZ>::Ptr region_cloud = extractROI(rectangle, cloud_msg);
-    // // Publish region cloud
-    // sensor_msgs::msg::PointCloud2 out_msg;
-    // pcl::toROSMsg(*region_cloud, out_msg);
 
-    // out_msg.header.stamp = this->now();
-    // out_msg.header.frame_id = DEPTH_FRAME_ID;
+    if (depth.empty()) return;
 
-    // ref_point_cloud_pub_->publish(out_msg);
-    // Calculate centroid
-    Eigen::Vector4f centroid;
-	pcl::compute3DCentroid(*region_cloud, centroid);
-    // Translate to base_link
+    std::vector<cv::Point2f> corners = {job.c1, job.c2};
+
+    auto roi = extractROI(corners, depth);
+
+    if (roi->empty()) return;
+
+    Eigen::Vector3d centroid(0,0,0);
+
+    for (const auto& p : roi->points)
+        centroid += Eigen::Vector3d(p.x, p.y, p.z);
+
+    centroid /= roi->size();
+
+    // Lookup transform from source to target frame
     geometry_msgs::msg::TransformStamped transform_stamped =
-    tf_buffer_->lookupTransform(
-        "base_link",    // Source frame
-        DEPTH_FRAME_ID,  // Target frame
-        tf2::TimePointZero  // Latest available
-    );
-    RCLCPP_INFO(get_logger(), "Centroid Pose: %f, %f, %f, %f", centroid[0], centroid[1], centroid[2], centroid[3]);
-    Eigen::Vector3d centroid3(centroid.x(), centroid.y(), centroid.z());
+        tf_buffer_->lookupTransform(
+            "base_link",               // target frame
+            CAM_FRAME_ID, // source frame
+            tf2::TimePointZero   // latest available
+        );
     Eigen::Isometry3d T_depth_base = tf2::transformToEigen(transform_stamped);
-    Eigen::Vector3d point_d =  T_depth_base * centroid3;
-    Eigen::Vector3f point(point_d.x(), point_d.y(), point_d.z());
+    Eigen::Vector3d point_d =  T_depth_base * centroid;
+
     // Orientation Calculation
     Eigen::Vector3d z = wall_normal;
     Eigen::Vector3d x = outward_normal;
@@ -580,187 +544,66 @@ void ConsensusExtractorNode::processJob(const ConsensusJob& job, pcl::PointCloud
     R.col(2) = z;
     // Create Pose
     geometry_msgs::msg::PoseStamped pose;
-    pose.header.stamp = this->now();
     pose.header.frame_id = "base_link";
-    // Position
-    pose.pose.position.x = point.x();
-    pose.pose.position.y = point.y();
-    pose.pose.position.z = point.z();
-    // Orientation Quaternion
+    pose.header.stamp = this->now();
+
+    pose.pose.position.x = point_d.x();
+    pose.pose.position.y = point_d.y();
+    pose.pose.position.z = point_d.z() + 0.03;
+
     Eigen::Quaterniond q(R);
+    q.normalize();
 
     pose.pose.orientation.x = q.x();
     pose.pose.orientation.y = q.y();
     pose.pose.orientation.z = q.z();
     pose.pose.orientation.w = q.w();
-    // Publish Centroid
+
     apple_pose_pub_->publish(pose);
-    #ifdef ENABLE_PIPE_TIMING
-    auto t_end = std::chrono::steady_clock::now();
-
-    auto end_to_end =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            t_end - job.t_enqueue
-        ).count();
-
-    auto pipeline =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            t_end - t_start
-        ).count();
-
-    RCLCPP_INFO(this->get_logger(),
-        "Pipeline timing: total=%ld µs | internal=%ld µs",
-        end_to_end,
-        pipeline
-    );
-    #endif
-}
-
-// geometry
-Eigen::Vector3f ConsensusExtractorNode::cornerToRay(const cv::Point2f& c1)
-{
-    float distX = c1.x;
-    float distY = c1.y;
-
-    float normX = (distX - cx_) / fx_;
-    float normY = (distY - cy_) / fy_;
-
-    // Transform from color frame to depth frame
-    Eigen::Vector3f ray_rgb_1(normX, normY, 1.0);
-    Eigen::Vector3f ray1 = T_depth_rgb_.linear() * ray_rgb_1;
-    
-    return ray1;
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr ConsensusExtractorNode::extractROI(
-    const std::vector<Eigen::Vector3f>& cornersRay,
-    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
-    )
+    const std::vector<cv::Point2f>& corners,
+    const cv::Mat& depth)
 {
-    // KD Tree for optimized search
-    pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+    auto roi = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
-    kdtree.setInputCloud (cloud);
+    if (depth.empty()) return roi;
 
-    // Variables for ray search
-    int n = RAYSTEPS;
-    float k = (RAYFARLIMIT - RAYNEARLIMIT) / n;
-    // Origin at depth sensor
-    Eigen::Vector3f origin = T_depth_rgb_.translation();
+    int min_u = std::numeric_limits<int>::max();
+    int min_v = std::numeric_limits<int>::max();
+    int max_u = 0;
+    int max_v = 0;
 
-    Eigen::Vector3f dir1 = cornersRay[0];
-    Eigen::Vector3f dir2 = cornersRay[1];
+    for (const auto& c : corners)
+    {
+        min_u = std::min(min_u, (int)c.x);
+        min_v = std::min(min_v, (int)c.y);
+        max_u = std::max(max_u, (int)c.x);
+        max_v = std::max(max_v, (int)c.y);
+    }
 
-    std::vector<pcl::PointXYZ> c1points(n);
-    std::vector<pcl::PointXYZ> c2points(n);
-
-    int c1_best_idx = 0;
-    int c2_best_idx = 0;
-
-    float c1_best_dist = std::numeric_limits<float>::max();
-    float c2_best_dist = std::numeric_limits<float>::max();
-
-    for (int i = 0; i < n; ++i)
-    {   
-        // Vectors to store result
-        std::vector<int> indices(1);
-        std::vector<float> distances(1);
-        float t = RAYNEARLIMIT + i * k;
-
-        Eigen::Vector3f p1 = origin + t * dir1;
-        Eigen::Vector3f p2 = origin + t * dir2;
-
-        c1points[i] = pcl::PointXYZ(p1.x(), p1.y(), p1.z());
-        c2points[i] = pcl::PointXYZ(p2.x(), p2.y(), p2.z());
-
-        if (kdtree.nearestKSearch(c1points[i], 1, indices, distances) > 0)
+    for (int v = min_v; v <= max_v; v++)
+    {
+        for (int u = min_u; u <= max_u; u++)
         {
-            if (distances[0] < c1_best_dist)
-            {   
-                const auto &candidate = cloud->points[indices[0]];
+            uint16_t d = depth.at<uint16_t>(v, u);
 
-                if (!pcl::isFinite(candidate))
-                    continue;
+            if (d == 0 || d == 65535) continue;
 
-                if (candidate.x == 0 &&
-                    candidate.y == 0 &&
-                    candidate.z == 0)
-                    continue;
-                if (candidate.z <= 0.15) continue;
-                c1_best_dist = distances[0];
-                c1_best_idx = indices[0];
-            }
-        }
+            float Z = d * 0.001f; // mm → meters
 
-        if (kdtree.nearestKSearch(c2points[i], 1, indices, distances) > 0)
-        {
-            if (distances[0] < c2_best_dist)
-            {
-                const auto &candidate = cloud->points[indices[0]];
+            pcl::PointXYZ p;
 
-                if (!pcl::isFinite(candidate))
-                    continue;
+            p.z = Z;
+            p.x = (u - cx_) * Z / fx_;
+            p.y = (v - cy_) * Z / fy_;
 
-                if (candidate.x == 0 &&
-                    candidate.y == 0 &&
-                    candidate.z == 0)
-                    continue;
-                c2_best_dist = distances[0];
-                c2_best_idx = indices[0];
-            }
+            roi->push_back(p);
         }
     }
 
-    // // Publish region cloud
-    // auto ray_cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(
-    // new pcl::PointCloud<pcl::PointXYZ>());
-
-    // ray_cloud->points.insert(ray_cloud->points.end(),
-    //                         c1points.begin(),
-    //                         c1points.end());
-
-    // ray_cloud->width = ray_cloud->points.size();
-    // ray_cloud->height = 1;
-    // ray_cloud->is_dense = true;
-
-    // sensor_msgs::msg::PointCloud2 ray_msg;
-    // pcl::toROSMsg(*ray_cloud, ray_msg);
-
-    // ray_msg.header.stamp = this->now();
-    // ray_msg.header.frame_id = DEPTH_FRAME_ID;
-
-    // ref_point_cloud_pub_->publish(ray_msg);
-
-    // Corners defining cube
-    pcl::PointXYZ c1_best = cloud->points[c1_best_idx];
-    pcl::PointXYZ c2_best = cloud->points[c2_best_idx];
-    Eigen::Vector4f world_c1(c1_best.x, c1_best.y, c1_best.z, 1);
-    Eigen::Vector4f world_c2(c2_best.x, c2_best.y, c2_best.z, 1);
-
-    Eigen::Vector4f min_pt(
-        std::min(world_c1.x(), world_c2.x()),
-        std::min(world_c1.y(), world_c2.y()),
-        std::min(world_c1.z(), world_c2.z()),
-        1.0f);
-
-    Eigen::Vector4f max_pt(
-        std::max(world_c1.x(), world_c2.x()),
-        std::max(world_c1.y(), world_c2.y()),
-        std::max(world_c1.z(), world_c2.z()),
-        1.0f);
-
-    pcl::CropBox<pcl::PointXYZ> crop;
-    auto roi_cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(
-        new pcl::PointCloud<pcl::PointXYZ>()
-    );
-    crop.setInputCloud(cloud);
-
-    crop.setMin(min_pt);
-    crop.setMax(max_pt);
-
-    crop.filter(*roi_cloud);
-
-    return roi_cloud;
+    return roi;
 }
 
 int main(int argc, char** argv)

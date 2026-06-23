@@ -14,6 +14,7 @@ find_package(tf2_ros REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(cv_bridge REQUIRED)
 find_package(Eigen REQUIRED)
 find_package(tf2_eigen REQUIRED)
 # uncomment the following section in order to fill in
@@ -32,8 +33,10 @@ ament_target_dependencies(point_cloud_processor
   pcl_ros
   pcl_conversions
   OpenCV
+  cv_bridge
   Eigen
   tf2_eigen
+  tf2_geometry_msgs
 )
 install(TARGETS
   point_cloud_processor
