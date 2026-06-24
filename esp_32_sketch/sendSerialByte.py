@@ -1,6 +1,7 @@
 import serial
+import time
 
-ser = serial.Serial('COM3', 115200)
+ser = serial.Serial('/dev/ttyUSB0', 115200)
 
 HEADER = 0xAA
 
@@ -9,5 +10,11 @@ def set_relays(state):
     ser.write(packet)
 
 # Example usage:
-set_relays(0b1000)  # relay 3 ON
-set_relays(0b0011)  # relay 0 and 1 ON
+try:
+    while True:
+        set_relays(0b0000)
+        time.sleep(1)
+        set_relays(0b0001)
+        time.sleep(1)
+finally:
+    set_relays(0b0000)
