@@ -12,6 +12,9 @@ find_package(shape_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
+find_package(apple_interfaces REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(geometry_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -23,6 +26,9 @@ ament_target_dependencies(bin_manager
   moveit_msgs
   moveit_core 
   moveit_ros_planning
+  apple_interfaces
+  tf2_ros
+  geometry_msgs
 )
 install(TARGETS
   bin_manager

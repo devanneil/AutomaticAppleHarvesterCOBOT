@@ -9,6 +9,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SuctionCommand.srv"
   "srv/CloudScan.srv"
+  "srv/UpdateBin.srv"
   "msg/CameraConsensus.msg"
   DEPENDENCIES
   std_msgs

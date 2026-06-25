@@ -7,6 +7,8 @@
   <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
   <license>TODO: License declaration</license>
 
+  <depend>apple_interfaces</depend>
+  
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <test_depend>ament_lint_auto</test_depend>

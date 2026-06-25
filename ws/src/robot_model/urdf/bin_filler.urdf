@@ -1,35 +1,11 @@
 <?xml version="1.0" ?>
 <robot name="bin_filler">
-  <link name="base_link"/>
 
-  <link name="bin_x"/>
-  <link name="bin_y"/>
-  <link name="bin_z"/>
-
-  <joint name="bin_x_joint" type="prismatic">
-      <parent link="base_link"/>
-      <child link="bin_x"/>
-      <axis xyz="1 0 0"/>
-      <limit lower="-5" upper="5" effort="1" velocity="1"/>
-  </joint>
-
-  <joint name="bin_y_joint" type="prismatic">
-      <parent link="bin_x"/>
-      <child link="bin_y"/>
-      <axis xyz="0 1 0"/>
-      <limit lower="-5" upper="5" effort="1" velocity="1"/>
-  </joint>
-
-  <joint name="bin_z_joint" type="prismatic">
-      <parent link="bin_y"/>
-      <child link="bin_z"/>
-      <axis xyz="0 0 1"/>
-      <limit lower="-2" upper="2" effort="1" velocity="1"/>
-  </joint>
+  <link name="dummy_link"/>
 
   <joint name="dummy_joint" type="fixed">
       <origin xyz="-0.414 -1.882 0.724" rpy="-0.000 0.000 -1.571"/>
-      <parent link="bin_z"/>
+      <parent link="dummy_link"/>
       <child link="Top_Frame_2"/>
   </joint>
 
