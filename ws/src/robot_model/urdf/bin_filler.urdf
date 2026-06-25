@@ -1,5 +1,38 @@
 <?xml version="1.0" ?>
 <robot name="bin_filler">
+  <link name="base_link"/>
+
+  <link name="bin_x"/>
+  <link name="bin_y"/>
+  <link name="bin_z"/>
+
+  <joint name="bin_x_joint" type="prismatic">
+      <parent link="base_link"/>
+      <child link="bin_x"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="-5" upper="5" effort="1" velocity="1"/>
+  </joint>
+
+  <joint name="bin_y_joint" type="prismatic">
+      <parent link="bin_x"/>
+      <child link="bin_y"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="-5" upper="5" effort="1" velocity="1"/>
+  </joint>
+
+  <joint name="bin_z_joint" type="prismatic">
+      <parent link="bin_y"/>
+      <child link="bin_z"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2" upper="2" effort="1" velocity="1"/>
+  </joint>
+
+  <joint name="dummy_joint" type="fixed">
+      <origin xyz="-0.414 -1.882 0.724" rpy="-0.000 0.000 -1.571"/>
+      <parent link="bin_z"/>
+      <child link="Top_Frame_2"/>
+  </joint>
+
   <link name="Top_Frame_2">
     <visual name="Top_Frame_2_visual">
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -673,7 +706,7 @@
     <origin xyz="-0.02 -0.29419456 0.31323202" rpy="0 -1.5707963 0"/>
     <parent link="Angle_Bracket_4"/>
     <child link="Corner_8020_Series_15_Bracket_4222026_2"/>
-  </joint>
+      </joint>
   <joint name="Fastened_17" type="fixed">
     <origin xyz="-0.0762 0 0.073025" rpy="-1.5707963 0 -3.1415927"/>
     <parent link="Apple_Chute_Entrance_4242026_3"/>
@@ -687,7 +720,7 @@
   <joint name="Fastened_8" type="fixed">
     <origin xyz="0.0166624 -0.066926328 0" rpy="-1.5707963 -0.78539816 1.5707963"/>
     <parent link="Corner_8020_Series_15_Bracket_4222026_2"/>
-    <child link="Bottom_Frame_3"/>
+<child link="Bottom_Frame_3"/>
   </joint>
   <joint name="Fastened_4" type="fixed">
     <origin xyz="0 1.1538 0" rpy="0 0 3.1415927"/>
@@ -718,7 +751,7 @@
     <origin xyz="-1.1538 0 -0.02" rpy="0 0 -1.5707963"/>
     <parent link="Bottom_Frame_1"/>
     <child link="Apple_Bin_4222026_1"/>
-  </joint>
+      </joint>
   <joint name="Fastened_25" type="fixed">
     <origin xyz="0 0.04 0" rpy="0 0 1.5707963"/>
     <parent link="Bottom_Frame_1"/>

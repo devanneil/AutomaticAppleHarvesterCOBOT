@@ -1,0 +1,4 @@
+bin_manager:
+  ros__parameters:
+    bin_pose_init: [-0.1, 0.1, 0.0]
+    bin_collision_model: "package://robot_model/meshes/bin_assembly.stl"
