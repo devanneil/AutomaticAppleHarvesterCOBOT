@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import Image, JointState, PointCloud2, CameraInfo
 from geometry_msgs.msg import PoseStamped, Pose, PointStamped
 from sensor_msgs_py import point_cloud2
-from apple_interfaces.msg import AppleConsensus
+from apple_interfaces.msg import CameraConsensus
+from apple_interfaces.srv import CloudScan
 import numpy as np
 import cv2
 import torch
@@ -110,11 +112,21 @@ class CameraDriver(Node):
             10
         )
 
-        self.apple_consensus_pub = self.create_publisher(
-            AppleConsensus,
-            '/arm1/apple_consensus',
-            10
+        # self.apple_consensus_pub = self.create_publisher(
+        #     AppleConsensus,
+        #     '/arm1/apple_consensus',
+        #     10
+        # )
+        self.start_request = time.perf_counter()
+        self.apple_consensus_client = self.create_client(
+            CloudScan, "/arm1/cloud_scan"
         )
+        self.apple_pose_pub = self.create_publisher(
+            PoseStamped,  "/arm1/apple_locations", 10
+        )
+        # Wait until the service is available
+        while not self.apple_consensus_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn('Service not available, waiting...')
         #===================CV Interface======================
         # Create CV Context
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
@@ -234,7 +246,8 @@ class CameraDriver(Node):
                 self.get_logger().info(
                     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
                 )
-                apple_message = AppleConsensus()
+                self.start_request = time.perf_counter()
+                apple_message = CameraConsensus()
                 apple_message.header.stamp = self.get_clock().now().to_msg()
                 apple_message.header.frame_id = "arm1_cam_color_frame"  # or camera frame
 
@@ -244,10 +257,22 @@ class CameraDriver(Node):
                 apple_message.u2 = int(x2)
                 apple_message.v2 = int(y2)
 
-                self.apple_consensus_pub.publish(apple_message)
-                
+                scan_request = CloudScan.Request()
+                scan_request.pixel_locations = [apple_message]
+                scan_request.size = 1
 
-                
+                future = self.apple_consensus_client.call_async(scan_request)
+                future.add_done_callback(self.consensus_done)
+    
+    def consensus_done(self, future):
+        try:
+            response = future.result()
+            for pose in response.world_locations:
+                self.apple_pose_pub.publish(pose)
+            now = time.perf_counter()
+            self.get_logger().info(f"Service round-trip: {(now - self.start_request)*1000:.1f} ms")
+        except Exception as e:
+            self.get_logger().error(str(e))
 
 
     # Find 3D points from box consensus  
