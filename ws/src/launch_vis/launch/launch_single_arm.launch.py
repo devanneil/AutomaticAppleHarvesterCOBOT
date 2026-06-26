@@ -117,11 +117,22 @@ def generate_launch_description():
         ).to_moveit_configs()
     )
 
-    bin_config = os.path.join(
-        get_package_share_directory("robot_moveit_config"),
+    sys_config = os.path.join(
+        get_package_share_directory("launch_vis"),
         "config",
-        "bin.yaml"
+        "params.yaml"
     )
+
+    models_share = get_package_share_directory("robot_model")
+
+    urdf_file = os.path.join(
+        models_share,
+        "urdf",
+        "bin_filler.urdf"
+    )
+
+    with open(urdf_file, "r") as f:
+        robot_description = f.read()
     ld = LaunchDescription()
 
     # -----------------------------
@@ -224,14 +235,6 @@ def generate_launch_description():
         )
     )
 
-    ld.add_action(
-        Node(
-            package="moveit_scene_setup",
-            executable="add_bin",
-            parameters=[bin_config],
-        )
-    )
-
     # Second wait gate
     #ld.add_action(OpaqueFunction(function=wait_for_robot))
     # -----------------------------
@@ -242,6 +245,25 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(
                 str(moveit_config.package_path / "launch/move_group.launch.py")
             )
+        )
+    )
+
+    ld.add_action(
+        Node(
+            package="robot_state_publisher",
+            executable="robot_state_publisher",
+            namespace="bin_manager",
+            parameters=[{
+                    "robot_description": robot_description
+                }]
+        )
+    )
+
+    ld.add_action(
+        Node(
+            package="bin_manager",
+            executable="bin_manager",
+            parameters=[sys_config],
         )
     )
 

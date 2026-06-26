@@ -1,5 +1,6 @@
 #include <memory>
 #include <chrono>
+#include <queue>
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -19,6 +20,7 @@ public:
             apple_pose_topic,
             10,
             std::bind( &ArmController::appleCallback, this, std::placeholders::_1));
+        apple_pose_queue_ = std::deque<geometry_msgs::msg::PoseStamped::SharedPtr>();
         // timer_ = create_wall_timer(
         //     std::chrono::seconds(1),
         //     std::bind(&ArmController::executePickSequence, this));
@@ -81,8 +83,9 @@ private:
         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
         std::shared_ptr<std_srvs::srv::SetBool::Response> response
     );
+    bool isDuplicatePose(const geometry_msgs::msg::PoseStamped::SharedPtr& msg);
 
-    geometry_msgs::msg::PoseStamped::SharedPtr last_apple_pose_;
+    std::deque<geometry_msgs::msg::PoseStamped::SharedPtr> apple_pose_queue_;
     geometry_msgs::msg::PoseStamped::SharedPtr home_;
 
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr apple_sub_;
@@ -126,9 +129,13 @@ geometry_msgs::msg::PoseStamped create_pose(
 
     return pose;
 }
-void ArmController::appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+void ArmController::appleCallback(
+    const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
-    last_apple_pose_ = msg;
+    if (!isDuplicatePose(msg))
+    {
+        apple_pose_queue_.push_back(msg);
+    }
 }
 
 bool ArmController::moveToPose(
@@ -223,7 +230,7 @@ bool ArmController::moveToPose(
 //     }
 void ArmController::executePickSequence()
 {
-    if (!last_apple_pose_)
+    if (apple_pose_queue_.size() == 0)
         return;
     if (busy_)
         return;
@@ -235,9 +242,8 @@ void ArmController::executePickSequence()
         return;
     }
     busy_ = true;
-    auto target = *last_apple_pose_;
-
-    last_apple_pose_.reset();
+    auto target = apple_pose_queue_.front();
+    apple_pose_queue_.pop_front();
 
     auto current_pose = move_group_->getCurrentPose("suction_link");
     home_ = std::make_shared<geometry_msgs::msg::PoseStamped>(current_pose);
@@ -248,7 +254,7 @@ void ArmController::executePickSequence()
         home_->pose.position.y,
         home_->pose.position.z);
 
-    auto approach = target;
+    geometry_msgs::msg::PoseStamped approach = *target;
 
     approach.pose.position.x -= 0.2;
 
@@ -262,8 +268,8 @@ void ArmController::executePickSequence()
 
     RCLCPP_INFO(get_logger(), "Planning target");
 
-    target.pose.position.x -= 0.1;
-    if(!moveToPose(target, true)) {
+    target->pose.position.x -= 0.1;
+    if(!moveToPose(*target, true)) {
         moveToPose(*home_, true);
         RCLCPP_WARN(get_logger(), "FAILED TO TARGET");
         return;
@@ -285,6 +291,30 @@ void ArmController::executePickSequence()
 
     moveToPose(*home_, true);
     busy_ = false;
+}
+
+bool ArmController::isDuplicatePose(const geometry_msgs::msg::PoseStamped::SharedPtr& msg)
+{
+    constexpr double POS_EPS = 0.01; // 1 cm tolerance
+
+    for (const auto& existing : apple_pose_queue_)
+    {
+        const auto& a = existing->pose.position;
+        const auto& b = msg->pose.position;
+
+        double dx = a.x - b.x;
+        double dy = a.y - b.y;
+        double dz = a.z - b.z;
+
+        double dist2 = dx*dx + dy*dy + dz*dz;
+
+        if (dist2 < POS_EPS * POS_EPS)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 int main(int argc, char * argv[])

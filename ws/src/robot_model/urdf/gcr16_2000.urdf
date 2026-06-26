@@ -325,7 +325,7 @@
   <joint name="suction_joint" type="fixed">
     <parent link="bracket_link"/>
     <child link="suction_link"/>
-    <origin rpy="0 0 0" xyz="0 0 0.14605"/>
+    <origin rpy="0 0 0" xyz="0 0 0.2413"/>
   </joint>
   <!-- Tool Frame -->
   <joint name="tool_frame_joint" type="fixed">

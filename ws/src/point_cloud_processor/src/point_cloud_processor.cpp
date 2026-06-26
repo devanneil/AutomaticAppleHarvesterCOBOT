@@ -25,21 +25,30 @@
 #include <thread>
 #include <condition_variable>
 #include <limits>
+#include <stdexcept>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
-#include "apple_interfaces/msg/apple_consensus.hpp"
+#include "apple_interfaces/msg/camera_consensus.hpp"
+#include "apple_interfaces/srv/cloud_scan.hpp"
 
 struct ConsensusJob
 {
     std_msgs::msg::Header header;
-    cv::Point2f c1;
-    cv::Point2f c2;
+    cv::Point2d c1;
+    cv::Point2d c2;
 
-    #ifdef ENABLE_PIPE_TIMING
+    geometry_msgs::msg::PoseStamped result;
+    bool success = false;
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool complete = false;
+
+#ifdef ENABLE_PIPE_TIMING
     std::chrono::steady_clock::time_point t_enqueue;
-    #endif
+#endif
 };
 
 class ConsensusExtractorNode : public rclcpp::Node
@@ -128,11 +137,17 @@ public:
         //     std::bind(&ConsensusExtractorNode::camInfoCallback, this, std::placeholders::_1)
         // );
 
-        std::string consensus_topic = "/" + ARM_NUM + "/apple_consensus";
-        consensus_sub_ = this->create_subscription<apple_interfaces::msg::AppleConsensus> (
+        // std::string consensus_topic = "/" + ARM_NUM + "/apple_consensus";
+        // consensus_sub_ = this->create_subscription<apple_interfaces::msg::AppleConsensus> (
+        //     consensus_topic,
+        //     10,
+        //     std::bind(&ConsensusExtractorNode::consensusCallback, this, std::placeholders::_1)
+        // );
+
+        std::string consensus_topic = "/" + ARM_NUM + "/cloud_scan";
+        consensus_srv_ = this->create_service<apple_interfaces::srv::CloudScan> (
             consensus_topic,
-            10,
-            std::bind(&ConsensusExtractorNode::consensusCallback, this, std::placeholders::_1)
+            std::bind(&ConsensusExtractorNode::consensusCallback, this, std::placeholders::_1, std::placeholders::_2)
         );
 
         // Publishers
@@ -142,11 +157,11 @@ public:
             10
         );
 
-        std::string apple_pose_topic = "/" + ARM_NUM + "/apple_locations";
-        apple_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped> (
-            apple_pose_topic,
-            10
-        );
+        // std::string apple_pose_topic = "/" + ARM_NUM + "/apple_locations";
+        // apple_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped> (
+        //     apple_pose_topic,
+        //     10
+        // );
         // Compressed point cloud sub
         // vis_timer_ = this->create_wall_timer(
         //     std::chrono::milliseconds(2000), // .5 Hz
@@ -221,11 +236,12 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_image_sub_;
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr depth_info_sub_;
     //rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
-    rclcpp::Subscription<apple_interfaces::msg::AppleConsensus>::SharedPtr consensus_sub_; // replace with your msg
+    //rclcpp::Subscription<apple_interfaces::msg::AppleConsensus>::SharedPtr consensus_sub_; // replace with your msg
+    rclcpp::Service<apple_interfaces::srv::CloudScan>::SharedPtr consensus_srv_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr depth_vis_sub_;
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr ref_point_cloud_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr apple_pose_pub_;
+    //rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr apple_pose_pub_;
 
     rclcpp::TimerBase::SharedPtr vis_timer_;
     // ===== TF =====
@@ -252,7 +268,7 @@ private:
     bool depth_initialized;
 
     // ===== Job queue =====
-    std::queue<ConsensusJob> job_queue_;
+    std::queue<std::shared_ptr<ConsensusJob>> job_queue_;
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
 
@@ -265,7 +281,9 @@ private:
     void depthCallback(const sensor_msgs::msg::Image::SharedPtr msg);
     void depthInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
     //void camInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
-    void consensusCallback(const apple_interfaces::msg::AppleConsensus::SharedPtr msg); // replace type
+    void consensusCallback(    
+        const std::shared_ptr<apple_interfaces::srv::CloudScan::Request> request,
+        std::shared_ptr<apple_interfaces::srv::CloudScan::Response> response); // replace type
     void checkTfReady();
     void publishVizCloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
 
@@ -273,7 +291,7 @@ private:
     void workerLoop();
 
     // processing
-    void processJob(const ConsensusJob& job);
+    geometry_msgs::msg::PoseStamped processJob(const ConsensusJob& job);
 
     // geometry
     pcl::PointCloud<pcl::PointXYZ>::Ptr extractROI(
@@ -335,29 +353,67 @@ void ConsensusExtractorNode::depthInfoCallback(
 
     depth_info_sub_.reset();
 }
-void ConsensusExtractorNode::consensusCallback(const apple_interfaces::msg::AppleConsensus::SharedPtr msg) {
-    uint32_t u1 = msg->u1;
-    uint32_t u2 = msg->u2;
-    uint32_t v1 = msg->v1;
-    uint32_t v2 = msg->v2;
-    
-    ConsensusJob job;
-    job.header = msg->header;
-    job.c1 = cv::Point2d(u1, v1);
-    job.c2 = cv::Point2d(u2, v2);
+void ConsensusExtractorNode::consensusCallback(
+    const std::shared_ptr<apple_interfaces::srv::CloudScan::Request> request,
+    std::shared_ptr<apple_interfaces::srv::CloudScan::Response> response)
+{
+#ifdef ENABLE_PIPE_TIMING
+    std::chrono::steady_clock::time_point srv_start = std::chrono::steady_clock::now();
+#endif
+    std::vector<std::shared_ptr<ConsensusJob>> jobs;
+    jobs.reserve(request->pixel_locations.size());
 
-    #ifdef ENABLE_PIPE_TIMING
-    job.t_enqueue = std::chrono::steady_clock::now();
-    RCLCPP_INFO(get_logger(), "Job created!");
-    #endif
-
+    // Queue one job per consensus rectangle
+    for (const auto &msg : request->pixel_locations)
     {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        job_queue_.push(job);
+        auto job = std::make_shared<ConsensusJob>();
+
+        job->header = msg.header;
+        job->c1 = cv::Point2d(msg.u1, msg.v1);
+        job->c2 = cv::Point2d(msg.u2, msg.v2);
+
+#ifdef ENABLE_PIPE_TIMING
+        job->t_enqueue = std::chrono::steady_clock::now();
+#endif
+
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            job_queue_.push(job);
+        }
+
+        jobs.push_back(job);
     }
 
-    queue_cv_.notify_one();
-} 
+    // Wake the worker thread(s)
+    queue_cv_.notify_all();
+
+    // Wait for every job to finish
+    response->world_locations.clear();
+    response->world_locations.reserve(jobs.size());
+
+    for (auto &job : jobs)
+    {
+        std::unique_lock<std::mutex> lock(job->mutex);
+
+        job->cv.wait(lock, [&]()
+        {
+            return job->complete;
+        });
+
+        response->world_locations.push_back(job->result);
+
+#ifdef ENABLE_PIPE_TIMING
+        std::chrono::steady_clock::time_point finish = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(finish - job->t_enqueue);
+        RCLCPP_INFO(get_logger(), "Pipeline time: %ld", elapsed.count());
+#endif
+    }
+#ifdef ENABLE_PIPE_TIMING
+    std::chrono::steady_clock::time_point srv_finish = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(srv_finish - srv_start);
+    RCLCPP_INFO(get_logger(), "Service time: %ld", elapsed.count());
+#endif
+}
 void ConsensusExtractorNode::checkTfReady()
 {
     if (tf_ready_)
@@ -437,27 +493,19 @@ void ConsensusExtractorNode::workerLoop()
 {
     while (rclcpp::ok() && running_)
     {
-        ConsensusJob job;
+        std::shared_ptr<ConsensusJob> job;
 
-        // Wait for work
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
 
-            queue_cv_.wait(
-                lock,
-                [this]()
-                {
-                    return !job_queue_.empty() || !running_;
-                }
-            );
-
-            // Shutdown condition
-            if (!running_)
+            queue_cv_.wait(lock, [&]()
             {
-                return;
-            }
+                return !job_queue_.empty() || !running_;
+            });
 
-            // Get next job
+            if (!running_)
+                return;
+
             job = job_queue_.front();
             job_queue_.pop();
         }
@@ -478,7 +526,14 @@ void ConsensusExtractorNode::workerLoop()
         try
         {
             // Process the consensus job
-            processJob(job);
+            geometry_msgs::msg::PoseStamped pose = processJob(*job);
+            {
+                std::lock_guard<std::mutex> lock(job->mutex);
+                job->result = pose;
+                job->success = true;
+                job->complete = true;
+            }
+            job->cv.notify_one();
         }
         catch (const std::exception& e)
         {
@@ -487,12 +542,17 @@ void ConsensusExtractorNode::workerLoop()
                 "Worker exception: %s",
                 e.what()
             );
+            {
+                job->success = false;
+                job->complete = true;
+            }
+            job->cv.notify_one();
         }
     }
 }
 
 // processing
-void ConsensusExtractorNode::processJob(const ConsensusJob& job)
+geometry_msgs::msg::PoseStamped ConsensusExtractorNode::processJob(const ConsensusJob& job)
 {
     cv::Mat depth;
     {
@@ -500,13 +560,13 @@ void ConsensusExtractorNode::processJob(const ConsensusJob& job)
         depth = latest_depth_.clone();
     }
 
-    if (depth.empty()) return;
+    if (depth.empty()) throw std::runtime_error("Depth Cloud Empty!");
 
     std::vector<cv::Point2f> corners = {job.c1, job.c2};
 
     auto roi = extractROI(corners, depth);
 
-    if (roi->empty()) return;
+    if (roi->empty()) throw std::runtime_error("ROI Cloud Empty!");
 
     Eigen::Vector3d centroid(0,0,0);
 
@@ -559,7 +619,7 @@ void ConsensusExtractorNode::processJob(const ConsensusJob& job)
     pose.pose.orientation.z = q.z();
     pose.pose.orientation.w = q.w();
 
-    apple_pose_pub_->publish(pose);
+    return pose;
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr ConsensusExtractorNode::extractROI(

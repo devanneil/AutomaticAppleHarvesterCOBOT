@@ -1,0 +1,6 @@
+# Request
+apple_interfaces/CameraConsensus[] pixel_locations
+uint32 size
+---
+# Response
+geometry_msgs/PoseStamped[] world_locations
