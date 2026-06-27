@@ -400,7 +400,12 @@ void ConsensusExtractorNode::consensusCallback(
             return job->complete;
         });
 
-        response->world_locations.push_back(job->result);
+        if (job->success) 
+        {
+            response->world_locations.push_back(job->result);
+            response->success = true;
+        }
+        else response->success = false;
 
 #ifdef ENABLE_PIPE_TIMING
         std::chrono::steady_clock::time_point finish = std::chrono::steady_clock::now();

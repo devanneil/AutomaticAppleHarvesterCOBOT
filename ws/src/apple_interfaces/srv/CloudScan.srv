@@ -4,3 +4,4 @@ uint32 size
 ---
 # Response
 geometry_msgs/PoseStamped[] world_locations
+bool success

@@ -267,6 +267,8 @@ class CameraDriver(Node):
     def consensus_done(self, future):
         try:
             response = future.result()
+            if not response.success:
+                raise Exception("Cloud Scan Fail")
             for pose in response.world_locations:
                 self.apple_pose_pub.publish(pose)
             now = time.perf_counter()
