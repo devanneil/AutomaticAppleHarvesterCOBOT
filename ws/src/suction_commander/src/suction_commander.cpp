@@ -2,6 +2,7 @@
 #include <chrono>
 #include <string>
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/u_int8.hpp>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -13,7 +14,7 @@ std::string DEV = "/dev/ttyUSB0";
 class SerialPort {
 public:
     bool openPort(const std::string &device, int baud) {
-        fd = open(device.c_str(), O_RDWR | O_NOCTTY);
+        fd = open(device.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
 
         if (fd < 0) {
             perror("Failed to open serial port");
@@ -37,7 +38,7 @@ public:
         tty.c_oflag = 0;
 
         tty.c_cc[VMIN]  = 0;
-        tty.c_cc[VTIME] = 5;
+        tty.c_cc[VTIME] = 1;   // faster polling
 
         tty.c_iflag &= ~(IXON | IXOFF | IXANY);
         tty.c_cflag |= (CLOCAL | CREAD);
@@ -54,9 +55,27 @@ public:
     }
 
     void writePacket(uint8_t header, uint8_t data) {
+        std::lock_guard<std::mutex> lock(io_mutex);
+
         uint8_t packet[2] = {header, data};
-        write(fd, packet, 2);
+        ::write(fd, packet, 2);
     }
+
+    int readPacket(uint8_t &header, uint8_t &data) {
+        std::lock_guard<std::mutex> lock(io_mutex);
+
+        uint8_t buf[2];
+        int n = ::read(fd, buf, 2);
+
+        if (n == 2) {
+            header = buf[0];
+            data = buf[1];
+        }
+
+        return n;
+    }
+
+    int getFd() const { return fd; }
 
     ~SerialPort() {
         if (fd >= 0) close(fd);
@@ -64,60 +83,63 @@ public:
 
 private:
     int fd = -1;
+    std::mutex io_mutex;
 };
+
 class SuctionCommander : public rclcpp::Node
 {
 public:
-    SuctionCommander() : Node("suction_Commander") {
+    SuctionCommander() : Node("suction_commander")
+    {
+        serial.openPort("/dev/ttyUSB0", 115200);
 
-        serial.openPort(DEV, 115200);
+        cmd_sub = create_subscription<std_msgs::msg::UInt8>(
+            "/suction/command", 10,
+            std::bind(&SuctionCommander::cmdCallback, this, std::placeholders::_1));
 
-        _service = this->create_service<apple_interfaces::srv::SuctionCommand>(
-            "suction_action",
-            std::bind(&SuctionCommander::service_callback, this,
-                std::placeholders::_1, std::placeholders::_2));
+        state_pub = create_publisher<std_msgs::msg::UInt8>(
+            "/suction/state", 10);
+
+        reader_thread = std::thread(&SuctionCommander::readLoop, this);
     }
     ~SuctionCommander() {
-        serial.writePacket(0xAA, 0b0000); //Stop all relays
+        serial.writePacket(0xAA, 0);
     }
-
 private:
 
-    void service_callback(
-        const std::shared_ptr<apple_interfaces::srv::SuctionCommand::Request> request,
-        std::shared_ptr<apple_interfaces::srv::SuctionCommand::Response> response)
+    void cmdCallback(const std_msgs::msg::UInt8::SharedPtr msg)
     {
-        if (!request) {
-            RCLCPP_ERROR(this->get_logger(), "Null request");
-            response->success = false;
-            return;
-        }
-
-        RCLCPP_INFO(this->get_logger(),
-                    "Relay request: %d", request->relay_id);
-        
-        if(request->state) {
-            // Enable Relay
-            relayMask |= (1 << request->relay_id);
-        } else {
-            relayMask &= ~(1 << request->relay_id);
-        }
-
-
-        // ---- SEND PACKET ----
-        serial.writePacket(0xAA, relayMask);
-
-        RCLCPP_INFO(this->get_logger(),
-                    "Sent mask: 0x%02X", relayMask);
-
-        response->success = true;
+        serial.writePacket(0xAA, msg->data);
     }
 
-    rclcpp::Service<apple_interfaces::srv::SuctionCommand>::SharedPtr _service;
+    void readLoop()
+    {
+        while (rclcpp::ok()) {
 
-    uint8_t relayMask = 0;
+            uint8_t header = 0;
+            uint8_t state = 0;
+
+            if (::read(serial.getFd(), &header, 1) <= 0)
+                continue;
+
+            if (header != 0xAA)
+                continue;
+
+            if (::read(serial.getFd(), &state, 1) <= 0)
+                continue;
+
+            auto msg = std_msgs::msg::UInt8();
+            msg.data = state;
+            state_pub->publish(msg);
+        }
+    }
 
     SerialPort serial;
+
+    rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr cmd_sub;
+    rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr state_pub;
+
+    std::thread reader_thread;
 };
 
 int main(int argc, char * argv[])
