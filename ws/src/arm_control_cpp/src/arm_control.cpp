@@ -11,6 +11,13 @@ ArmController::ArmController() : Node("arm_controller")
         10,
         std::bind( &ArmController::appleCallback, this, std::placeholders::_1));
     apple_pose_queue_ = std::deque<geometry_msgs::msg::PoseStamped::SharedPtr>();
+    // timer_ = create_wall_timer(
+    //     std::chrono::seconds(1),
+    //     std::bind(&ArmController::controlLoop, this));
+    context_.state = RobotState::Monitor;
+    context_.planning_group = "arm_1";
+    context_.last_state = std::chrono::steady_clock::now();
+    context_.last_qr_scan = context_.last_state;
 }
 
 void ArmController::initializeMoveIt() 
@@ -42,6 +49,7 @@ void ArmController::appleCallback(
     {
         apple_pose_queue_.push_back(msg);
     }
+    context_.consensus_size++;
 }
 
 bool ArmController::moveToPose(
@@ -57,6 +65,8 @@ bool ArmController::moveToPose(
             "MoveGroup not initialized");
         return false;
     }
+    auto current_pose = move_group_->getCurrentPose("suction_link");
+    if(poseEqual(current_pose, target)) return true;
     move_group_->setPoseTarget(target, end_effector);
     RCLCPP_INFO(get_logger(),
         "Goal pose: x=%f y=%f z=%f",
@@ -81,10 +91,8 @@ bool ArmController::moveToPose(
     return false;
 }
 
-void ArmController::executePickSequence()
+void ArmController::controlLoop()
 {
-    if (apple_pose_queue_.size() == 0)
-        return;
     if (busy_)
         return;
     if (!move_group_)
@@ -95,54 +103,68 @@ void ArmController::executePickSequence()
         return;
     }
     busy_ = true;
-    auto target = apple_pose_queue_.front();
-    apple_pose_queue_.pop_front();
 
     auto current_pose = move_group_->getCurrentPose("suction_link");
-    home_ = std::make_shared<geometry_msgs::msg::PoseStamped>(current_pose);
 
-    RCLCPP_INFO(get_logger(),
-        "Home pose: x=%f y=%f z=%f",
-        home_->pose.position.x,
-        home_->pose.position.y,
-        home_->pose.position.z);
-
-    geometry_msgs::msg::PoseStamped approach = *target;
-
-    approach.pose.position.x -= 0.2;
-
-    RCLCPP_INFO(get_logger(), "Planning approach");
-
-    if(!moveToPose(approach, true)) {
-        moveToPose(*home_, true);
-        RCLCPP_WARN(get_logger(), "FAILED TO APPROACH");
-        return;
-    }
-
-    RCLCPP_INFO(get_logger(), "Planning target");
-
-    target->pose.position.x -= 0.1;
-    if(!moveToPose(*target, true)) {
-        moveToPose(*home_, true);
-        RCLCPP_WARN(get_logger(), "FAILED TO TARGET");
-        return;
-    }
-
+    RobotCommand cmd = state_machine_.update(context_);
+    RCLCPP_INFO(get_logger(), robotStateToString(context_.state));
+    auto pose = cmd.pose;
     RCLCPP_INFO(
         get_logger(),
-        "Planning retreat");
-
-    if(!moveToPose(approach, false)) {
-        moveToPose(*home_, true);
-        RCLCPP_WARN(get_logger(), "FAILED TO RETREAT");
-        return;
-    }
-
+        "PoseStamped [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
+        pose.header.frame_id.c_str(),
+        pose.pose.position.x,
+        pose.pose.position.y,
+        pose.pose.position.z,
+        pose.pose.orientation.x,
+        pose.pose.orientation.y,
+        pose.pose.orientation.z,
+        pose.pose.orientation.w);
+    pose = move_group_->getCurrentPose("suction_link");
     RCLCPP_INFO(
         get_logger(),
-        "Planning home");
+        "PoseStamped [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
+        pose.header.frame_id.c_str(),
+        pose.pose.position.x,
+        pose.pose.position.y,
+        pose.pose.position.z,
+        pose.pose.orientation.x,
+        pose.pose.orientation.y,
+        pose.pose.orientation.z,
+        pose.pose.orientation.w);
 
-    moveToPose(*home_, true);
+    switch (cmd.type) {
+        case CommandType::WaitForUser:
+            holdForUser();
+            break;
+        case CommandType::MoveArm:
+            moveToPose(cmd.pose);
+            break;
+        case CommandType::SelectNextApple:
+            context_.target_pose = getNextPose();
+            break;
+        case CommandType::StartSuction:
+            RCLCPP_INFO(get_logger(), "Start suction here!");
+            context_.suction_state = true;
+            break;
+        case CommandType::StopSuction:
+            RCLCPP_INFO(get_logger(), "Stop suction here!");
+            context_.suction_state = false;
+            break;           
+        case CommandType::StopArm:
+            move_group_->stop();
+            break;
+        case CommandType::VisionScan:
+            RCLCPP_INFO(get_logger(), "Vision scan here!");
+            break;
+        case CommandType::QRScan:
+            RCLCPP_INFO(get_logger(), "QR Scan Here!");
+            break;
+        default:
+            RCLCPP_INFO(get_logger(), "No command specified!");
+    }
+    // Update context appropriately
+    context_.at_pose = poseEqual(move_group_->getCurrentPose("suction_link"), cmd.pose);
     busy_ = false;
 }
 
@@ -168,4 +190,13 @@ bool ArmController::isDuplicatePose(const geometry_msgs::msg::PoseStamped::Share
     }
 
     return false;
+}
+void ArmController::holdForUser() {
+    visual_tools_->prompt("Execute next step?");
+}
+geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
+    auto target = apple_pose_queue_.front();
+    apple_pose_queue_.pop_front();
+    context_.consensus_size--;
+    return *target;
 }

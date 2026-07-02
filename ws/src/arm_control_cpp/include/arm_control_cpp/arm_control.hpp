@@ -11,6 +11,9 @@
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
 
+#include "utils.hpp"
+#include "state_machine.hpp"
+
 class ArmController : public rclcpp::Node
 {
 public:
@@ -18,9 +21,10 @@ public:
 
     void initializeMoveIt();
 
-    void executePickSequence();
-
+    void controlLoop();
+    
 private:
+
     void appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
     bool moveToPose(const geometry_msgs::msg::PoseStamped& target, bool blocking, std::string end_effector);
@@ -35,7 +39,11 @@ private:
         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
         std::shared_ptr<std_srvs::srv::SetBool::Response> response
     );
+
     bool isDuplicatePose(const geometry_msgs::msg::PoseStamped::SharedPtr& msg);
+    void holdForUser();
+
+    geometry_msgs::msg::PoseStamped getNextPose();
 
     const std::string ARM_NUM = "arm1";
 
@@ -51,5 +59,7 @@ private:
 
     std::shared_ptr<moveit_visual_tools::MoveItVisualTools> visual_tools_;
 
+    RobotContext context_;
+    StateMachine state_machine_;
     bool busy_ = false;
 };

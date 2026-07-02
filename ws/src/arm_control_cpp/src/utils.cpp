@@ -26,20 +26,40 @@ geometry_msgs::msg::PoseStamped create_pose(
     return pose;
 }
 
-std::optional<geometry_msgs::msg::PoseStamped> get_pose_for_state(RobotContext &ctx)
+geometry_msgs::msg::PoseStamped getPoseForState(RobotContext &ctx)
 {
     switch (ctx.state) {
-        case RobotState::Monitor:
-            return create_pose(0.059, 1.416, -0.524, 1.641, -1.519, 0.070, "base_link") // Redo later for extensibility
-        case RobotState::QRScan:
-            return create_pose(-0.209, 1.376, -0.050, 2.405, 0.964, 0.771) // Redo later for extensibility
         default:
-            return std::nullopt;
+        case RobotState::Monitor:
+            return create_pose(0.515, 0.283, 1.392, -1.574, -0.140, -1.518, "base_link"); // Redo later for extensibility
+        case RobotState::QRScan:
+            return create_pose(-0.209, 1.376, -0.050, 2.405, 0.964, 0.771); // Redo later for extensibility
     }
 }
 
 geometry_msgs::msg::PoseStamped twistPick(
-    geometry_msgs::msg:PoseStamped pose
-) {
+    geometry_msgs::msg::PoseStamped pose
+) 
+{
     return pose; //Temp function
+}
+
+bool poseEqual(geometry_msgs::msg::PoseStamped pose_1, geometry_msgs::msg::PoseStamped pose_2) {
+    const auto& a = pose_1.pose.position;
+    const auto& b = pose_2.pose.position;
+
+    double dx = a.x - b.x;
+    double dy = a.y - b.y;
+    double dz = a.z - b.z;
+
+    double dist2 = dx*dx + dy*dy + dz*dz;
+
+    if (dist2 < 0.001)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }

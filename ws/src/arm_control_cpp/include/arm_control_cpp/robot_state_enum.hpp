@@ -51,7 +51,8 @@ enum class CommandType
     StartSuction, // Trigger suction head
     StopSuction, // Disable suction head
     StopArm, // Halt movement
-    VisionScan // Refill consensus list
+    VisionScan, // Refill consensus list
+    QRScan
 };
 
 struct RobotCommand

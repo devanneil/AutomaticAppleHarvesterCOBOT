@@ -29,7 +29,29 @@ Duration duration_since(
 }
 
 geometry_msgs::msg::PoseStamped twistPick(
-    geometry_msgs::msg:PoseStamped pose
+    geometry_msgs::msg::PoseStamped pose
 );
 
-std::optional<geometry_msgs::msg::PoseStamped> get_pose_for_state(RobotContext &ctx);
+geometry_msgs::msg::PoseStamped getPoseForState(RobotContext &ctx);
+
+inline const char* robotStateToString(RobotState state)
+{
+    switch (state)
+    {
+        case RobotState::Monitor:        return "Monitor";
+        case RobotState::Hold:           return "Hold";
+        case RobotState::Approach:       return "Approach";
+        case RobotState::Pick:           return "Pick";
+        case RobotState::Retreat:        return "Retreat";
+        case RobotState::QRScan:         return "QRScan";
+        case RobotState::QRSearch:       return "QRSearch";
+        case RobotState::Chute:          return "Chute";
+        case RobotState::ChuteRetreat:   return "ChuteRetreat";
+        case RobotState::HeatScan:       return "HeatScan";
+        case RobotState::CloseScan:      return "CloseScan";
+        case RobotState::Error:          return "Error";
+        default:                         return "Unknown";
+    }
+}
+
+bool poseEqual(geometry_msgs::msg::PoseStamped pose_1, geometry_msgs::msg::PoseStamped pose_2);

@@ -64,8 +64,9 @@ RobotCommand StateMachine::handleMonitor(RobotContext& ctx)
     if (!ctx.at_pose) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = get_pose_for_state(ctx);
+        nextCommand.pose = getPoseForState(ctx);
         nextCommand.requested_state = RobotState::Monitor;
+        return nextCommand;
     }
     else 
     {
@@ -93,7 +94,7 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = *get_pose_for_state(ctx);
+        nextCommand.pose = getPoseForState(ctx);
         nextCommand.requested_state = RobotState::HeatScan;
         return nextCommand;
     }
@@ -110,7 +111,7 @@ RobotCommand StateMachine::handleApproach(RobotContext& ctx)
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = ctx.target_pose;
-        nextCommand.pose.position.x -= 0.2;
+        nextCommand.pose.pose.position.x -= 0.2;
         nextCommand.requested_state = RobotState::Approach;
         return nextCommand;
     }
@@ -120,6 +121,7 @@ RobotCommand StateMachine::handleApproach(RobotContext& ctx)
         nextCommand.type = CommandType::StartSuction;
         nextCommand.pose = ctx.target_pose;
         nextCommand.requested_state = RobotState::Pick;
+        return nextCommand;
     }
 }
 
@@ -129,7 +131,7 @@ Picking the apple, suction trigger and move to apple directly, merged with twist
 RobotCommand StateMachine::handlePick(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Pick) throw std::runtime_error("Improper state!");
-    if (!ctx.at_pose)
+    if (!ctx.at_pose && ctx.step != 1)
     {
         ctx.step = 0;
         RobotCommand nextCommand;
@@ -154,7 +156,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
         nextCommand.requested_state = RobotState::Retreat;
         return nextCommand;
     }
-    if (duration_since(ctx.last_state) > 3.0)
+    if (duration_since(ctx.last_state) > std::chrono::milliseconds(500))
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
@@ -170,7 +172,7 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose.position.x -= 0.2;
+        nextCommand.pose.pose.position.x -= 0.2;
         nextCommand.requested_state = RobotState::Retreat;
         return nextCommand;
     }
@@ -206,6 +208,9 @@ RobotCommand StateMachine::handleChuteRetreat(RobotContext& ctx)
 RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::HeatScan) throw std::runtime_error("Improper state!");
+    RobotCommand tempCommand;
+    tempCommand.requested_state = RobotState::Monitor;
+    return tempCommand;
 }
 
 RobotCommand StateMachine::handleCloseScan(RobotContext& ctx)
