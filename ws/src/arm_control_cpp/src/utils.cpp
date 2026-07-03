@@ -42,7 +42,7 @@ geometry_msgs::msg::PoseStamped getPoseForState(RobotContext &ctx)
         case RobotState::Monitor:
             return create_pose(0.515, 0.283, 1.392, -1.574, -0.140, -1.518, "base_link"); // Redo later for extensibility
         case RobotState::QRScan:
-            return create_pose(-0.209, 1.376, -0.050, 2.405, 0.964, 0.771); // Redo later for extensibility
+            return create_pose(-0.503, 0.412, 1.232, -2.007, -0.032, 1.149, "base_link"); // Redo later for extensibility
     }
 }
 

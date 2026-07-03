@@ -69,7 +69,7 @@ void ArmController::initializeMoveIt()
         "EEF link: %s",
         move_group_->getEndEffectorLink().c_str());
 
-    // auto pose = create_pose(0.0, 0.0, 0.75, M_PI, 0, 0, "QR_Code_1");
+    // auto pose = create_pose(-0.503, 0.412, 1.232, -2.007, -0.032, 1.149, "base_link");
     // moveToPose(pose, true, "suction_link");
     // throw std::runtime_error("testing");
 }
