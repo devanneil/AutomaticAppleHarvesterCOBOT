@@ -93,12 +93,13 @@ public:
     {
         serial.openPort("/dev/ttyUSB0", 115200);
 
-        cmd_sub = create_subscription<std_msgs::msg::UInt8>(
-            "/suction/command", 10,
-            std::bind(&SuctionCommander::cmdCallback, this, std::placeholders::_1));
+        _service = this->create_service<apple_interfaces::srv::SuctionCommand>(
+            "suction_action",
+            std::bind(&SuctionCommander::service_callback, this,
+                std::placeholders::_1, std::placeholders::_2));
 
         state_pub = create_publisher<std_msgs::msg::UInt8>(
-            "/suction/state", 10);
+            "/suction_state", 10);
 
         reader_thread = std::thread(&SuctionCommander::readLoop, this);
     }
@@ -107,9 +108,34 @@ public:
     }
 private:
 
-    void cmdCallback(const std_msgs::msg::UInt8::SharedPtr msg)
+    void service_callback(
+        const std::shared_ptr<apple_interfaces::srv::SuctionCommand::Request> request,
+        std::shared_ptr<apple_interfaces::srv::SuctionCommand::Response> response)
     {
-        serial.writePacket(0xAA, msg->data);
+        if (!request) {
+            RCLCPP_ERROR(this->get_logger(), "Null request");
+            response->success = false;
+            return;
+        }
+
+        RCLCPP_INFO(this->get_logger(),
+                    "Relay request: %d", request->relay_id);
+        
+        if(request->state) {
+            // Enable Relay
+            relayMask |= (1 << request->relay_id);
+        } else {
+            relayMask &= ~(1 << request->relay_id);
+        }
+
+
+        // ---- SEND PACKET ----
+        serial.writePacket(0xAA, relayMask);
+
+        RCLCPP_INFO(this->get_logger(),
+                    "Sent mask: 0x%02X", relayMask);
+
+        response->success = true;
     }
 
     void readLoop()
@@ -131,15 +157,23 @@ private:
             auto msg = std_msgs::msg::UInt8();
             msg.data = state;
             state_pub->publish(msg);
+            // RCLCPP_INFO_THROTTLE(
+            //     this->get_logger(),
+            //     *this->get_clock(),
+            //     1000, // milliseconds
+            //     "Throttled message: '%u'", state
+            // );
         }
     }
 
     SerialPort serial;
 
-    rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr cmd_sub;
+    rclcpp::Service<apple_interfaces::srv::SuctionCommand>::SharedPtr _service;
     rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr state_pub;
 
     std::thread reader_thread;
+
+    uint8_t relayMask = 0;
 };
 
 int main(int argc, char * argv[])

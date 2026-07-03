@@ -2,4 +2,3 @@ int8 relay_id
 bool state
 ---
 bool success
-uint8 switch_state

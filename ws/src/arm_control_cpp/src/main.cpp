@@ -18,10 +18,16 @@ int main(int argc, char * argv[])
     while (rclcpp::ok())
     {
         node->controlLoop();
+        if (node->break_)
+        {   
+            node->disableVacuum();
+            break;
+        }
 
         std::this_thread::sleep_for(
             std::chrono::milliseconds(100));
     }
+    executor.cancel();  
     spinner.join();
 
     rclcpp::shutdown();

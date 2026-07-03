@@ -131,7 +131,7 @@ Picking the apple, suction trigger and move to apple directly, merged with twist
 RobotCommand StateMachine::handlePick(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Pick) throw std::runtime_error("Improper state!");
-    if (!ctx.at_pose && ctx.step != 1)
+    if (!ctx.at_pose && ctx.step == 0)
     {
         ctx.step = 0;
         RobotCommand nextCommand;
@@ -140,27 +140,33 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
         nextCommand.requested_state = RobotState::Pick;
         return nextCommand;
     }
-    if (ctx.suction_state && ctx.step != 1)
+    else
     {
         ctx.step = 1;
+    }
+    if (ctx.suction_state && ctx.step == 1)
+    {
+        ctx.step = 2;
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopArm;
         nextCommand.requested_state = RobotState::Pick;
         return nextCommand;
     }
-    if (ctx.step == 1)
+    if (ctx.step == 2)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = twistPick(ctx.target_pose);
         nextCommand.requested_state = RobotState::Retreat;
+        ctx.step = 0;
         return nextCommand;
     }
-    if (duration_since(ctx.last_state) > std::chrono::milliseconds(500))
+    if (duration_since(ctx.last_state) > std::chrono::milliseconds(5000))
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
         nextCommand.requested_state = RobotState::Monitor;
+        ctx.step = 0;
         return nextCommand;
     }
 }

@@ -47,7 +47,7 @@ uint8_t check_switch_state()
     for (uint8_t i = 0; i < 4; i++) {
         // Active-low switch (INPUT_PULLUP)
         if (digitalRead(switchPins[i]) == LOW) {
-            state |= (1 << i);
+            state |= (16 << i);
         }
     }
 
