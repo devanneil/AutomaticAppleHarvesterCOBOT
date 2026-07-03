@@ -6,16 +6,18 @@ from tf2_ros import Buffer, TransformListener, TransformException
 from tf2_geometry_msgs import do_transform_point
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PoseStamped
+from std_srvs.srv import Trigger
 from cv_bridge import CvBridge
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 import cv2
 import numpy as np
+import time
 
 from apple_interfaces.msg import CameraConsensus
 from apple_interfaces.srv import CloudScan
 from apple_interfaces.srv import UpdateBin
-
-import numpy as np
 
 class QRDetectorNode(Node):
     def __init__(self):
@@ -33,12 +35,15 @@ class QRDetectorNode(Node):
         self.tf_ready = False
         self.tf_timer = self.create_timer(0.2, self.check_tf_ready)
 
+        self.group_1 = MutuallyExclusiveCallbackGroup()
+
         # Create a subscriber to the /camera/image_raw topic
         self.camera_subscription = self.create_subscription(
             Image,
             f'/arm1_cam/{camera_sn}/color/image_raw', 
             self.image_callback,
-            10
+            10,
+            callback_group=self.group_1
         )
 
         # Point Cloud processor clinet
@@ -50,16 +55,27 @@ class QRDetectorNode(Node):
             UpdateBin, "/update_bin"
         )
 
+        self.trigger_service = self.create_service(
+            Trigger,
+            "/trigger_qr_scan",
+            self.trigger_callback,
+            callback_group=self.group_1
+        )
+
         # self.bin_pose_pub = self.create_publisher(
         #     PoseStamped, "/temp_visual", 10
         # )
 
         self.bridge = CvBridge()
         self.detector = cv2.QRCodeDetector()
+        self.trigger_detected = False
+        self.bin_updated = False
 
         self.get_logger().info("QR Detector Node Started")
 
-        # cv2.namedWindow("QR Detector", cv2.WINDOW_NORMAL)
+        cv2.namedWindow("QR Detector", cv2.WINDOW_NORMAL)
+        self.latest_frame = None
+        # self.cv_timer = self.create_timer(0.1, self.showImage)
     def check_tf_ready(self):
         if self.tf_ready:
             return
@@ -84,59 +100,71 @@ class QRDetectorNode(Node):
 
         except TransformException:
             self.get_logger().debug("Waiting for TF tree...")
+    def trigger_callback(self, request, response):
+        self.trigger_detected = True
+        start_time = self.get_clock().now()
+        while not self.bin_updated:
+            current_time = self.get_clock().now()
+            if (current_time - start_time).nanoseconds / 1e9 > 20.0:
+                response.success = False
+                self.trigger_detected = False
+                self.bin_updated = False
+                return response
+            time.sleep(0.1)
+        response.success = True
+        self.trigger_detected = False
+        self.bin_updated = False
+        return response
 
     def image_callback(self, msg):
         if not self.tf_ready:
             return
         # Convert ROS image → OpenCV
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        if self.trigger_detected:
+            # Detect and decode the QR code
+            value, points, _ = self.detector.detectAndDecode(frame)
 
-        # Detect and decode the QR code
-        value, points, _ = self.detector.detectAndDecode(frame)
+            # Check if QR code is detected
+            if value:
+                # print(f'Detected QR Code: {value}')
+                # Draw the bounding box around the QR code
+                if points is not None:
+                    points = points[0].astype(int)
+                    for i in range(4):
+                        cv2.line(frame, tuple(points[i]), tuple(points[(i+1)%4]), (0, 255, 0), 5)
 
-        # Check if QR code is detected
-        if value:
-            # print(f'Detected QR Code: {value}')
-            # Draw the bounding box around the QR code
-            if points is not None:
-                points = points[0].astype(int)
-                for i in range(4):
-                    cv2.line(frame, tuple(points[i]), tuple(points[(i+1)%4]), (0, 255, 0), 5)
+                    qr_message = CameraConsensus()
+                    qr_message.header.stamp = self.get_clock().now().to_msg()
+                    qr_message.header.frame_id = "arm1_cam_color_frame"  # or camera frame
 
-                qr_message = CameraConsensus()
-                qr_message.header.stamp = self.get_clock().now().to_msg()
-                qr_message.header.frame_id = "arm1_cam_color_frame"  # or camera frame
+                    # Top-left and bottom-right corners
+                    x1 = min(points[:, 0])
+                    y1 = min(points[:, 1])
+                    x2 = max(points[:, 0])
+                    y2 = max(points[:, 1])
 
-                # Top-left and bottom-right corners
-                x1 = min(points[:, 0])
-                y1 = min(points[:, 1])
-                x2 = max(points[:, 0])
-                y2 = max(points[:, 1])
+                    padding = 40  # pixels
 
-                padding = 40  # pixels
+                    height, width = frame.shape[:2]
 
-                height, width = frame.shape[:2]
+                    x1 = max(0, x1 - padding)
+                    y1 = max(0, y1 - padding)
+                    x2 = min(width - 1, x2 + padding)
+                    y2 = min(height - 1, y2 + padding)
 
-                x1 = max(0, x1 - padding)
-                y1 = max(0, y1 - padding)
-                x2 = min(width - 1, x2 + padding)
-                y2 = min(height - 1, y2 + padding)
+                    qr_message.u1 = int(x1)
+                    qr_message.v1 = int(y1)
+                    qr_message.u2 = int(x2)
+                    qr_message.v2 = int(y2)
 
-                qr_message.u1 = int(x1)
-                qr_message.v1 = int(y1)
-                qr_message.u2 = int(x2)
-                qr_message.v2 = int(y2)
+                    scan_request = CloudScan.Request()
+                    scan_request.pixel_locations = [qr_message]
+                    scan_request.size = 1
 
-                scan_request = CloudScan.Request()
-                scan_request.pixel_locations = [qr_message]
-                scan_request.size = 1
-
-                future = self.cloud_client.call_async(scan_request)
-                future.add_done_callback(self.consensus_done)
-
-        # Show image
-        # cv2.imshow("QR Detector", frame)
-        # cv2.waitKey(1)
+                    future = self.cloud_client.call_async(scan_request)
+                    future.add_done_callback(self.consensus_done)
+        self.latest_frame = frame
 
     def consensus_done(self, future):
         try:
@@ -164,24 +192,39 @@ class QRDetectorNode(Node):
         try:
             response = future.result()
             if response.success:
+                self.bin_updated = True
                 self.get_logger().info("Updated bin pose")
             else:
                 self.get_logger().info("Unable to update bin pose")
         except Exception as e:
             self.get_logger().error(str(e))
+    
+    def showImage(self):
+        # Show image
+        if self.latest_frame is not None:
+            cv2.imshow("QR Detector", self.latest_frame)
+            cv2.waitKey(1)
 
 def main(args=None):
     rclpy.init(args=args)
     node = QRDetectorNode()
 
+    # MultiThreadedExecutor with 8 worker threads
+    executor = MultiThreadedExecutor(num_threads=4)
+
+    # Add node to executor
+    executor.add_node(node)
+
     try:
-        rclpy.spin(node)
+        while rclpy.ok():
+            executor.spin_once()
+            node.showImage()
     except KeyboardInterrupt:
         pass
-
-    node.destroy_node()
-    rclpy.shutdown()
-    cv2.destroyAllWindows()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+        cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
