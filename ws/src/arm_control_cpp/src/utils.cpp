@@ -1,4 +1,13 @@
 #include "arm_control_cpp/utils.hpp"
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2/LinearMath/Quaternion.h>
+
+double degreesToRadians(double degrees) {
+    return degrees * (M_PI / 180.0);
+}
+double radiansToDegrees(double radians) {
+    return radians * (180.0 / M_PI);
+}
 
 geometry_msgs::msg::PoseStamped create_pose(
     float x,
@@ -38,13 +47,21 @@ geometry_msgs::msg::PoseStamped getPoseForState(RobotContext &ctx)
 }
 
 geometry_msgs::msg::PoseStamped twistPick(
-    geometry_msgs::msg::PoseStamped pose
+    geometry_msgs::msg::PoseStamped pose,
+    double twist_angle
 ) 
 {
-    return pose; //Temp function
+    double twist_rad = -M_PI/2 - degreesToRadians(twist_angle);
+    return create_pose(pose.pose.position.x, pose.pose.position.y, pose.pose.position.z, twist_rad, 0, -M_PI/2); //Temp function
 }
 
-bool poseEqual(geometry_msgs::msg::PoseStamped pose_1, geometry_msgs::msg::PoseStamped pose_2) {
+bool poseEqual(const geometry_msgs::msg::PoseStamped& pose_1,
+               const geometry_msgs::msg::PoseStamped& pose_2)
+{
+    constexpr double POSITION_TOLERANCE = 0.001;   // meters
+    constexpr double ORIENTATION_TOLERANCE = 0.05; // radians (~2.9°)
+
+    // Position comparison
     const auto& a = pose_1.pose.position;
     const auto& b = pose_2.pose.position;
 
@@ -52,14 +69,19 @@ bool poseEqual(geometry_msgs::msg::PoseStamped pose_1, geometry_msgs::msg::PoseS
     double dy = a.y - b.y;
     double dz = a.z - b.z;
 
-    double dist2 = dx*dx + dy*dy + dz*dz;
+    double dist2 = dx * dx + dy * dy + dz * dz;
 
-    if (dist2 < 0.001)
-    {
-        return true;
-    }
-    else
+    if (dist2 > POSITION_TOLERANCE * POSITION_TOLERANCE)
     {
         return false;
     }
+
+    // Orientation comparison
+    tf2::Quaternion q1, q2;
+    tf2::fromMsg(pose_1.pose.orientation, q1);
+    tf2::fromMsg(pose_2.pose.orientation, q2);
+
+    double angle = q1.angleShortestPath(q2);
+
+    return angle < ORIENTATION_TOLERANCE;
 }

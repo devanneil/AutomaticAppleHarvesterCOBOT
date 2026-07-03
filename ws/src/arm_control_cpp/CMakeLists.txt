@@ -7,6 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -23,11 +27,37 @@ find_package(apple_interfaces REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
-add_executable(arm_control 
-  src/main.cpp
-  src/arm_control.cpp
-  src/state_machine.cpp
-  src/utils.cpp
+add_library(state_machine
+    src/state_machine.cpp
+)
+target_include_directories(state_machine PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(state_machine 
+  geometry_msgs
+)
+add_library(utils
+    src/utils.cpp
+)
+target_include_directories(utils PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(utils 
+  rclcpp
+  geometry_msgs
+  tf2_geometry_msgs
+  tf2
+)
+add_executable(arm_control
+    src/main.cpp
+    src/arm_control.cpp
+)
+
+target_link_libraries(arm_control
+    state_machine
+    utils
 )
 target_include_directories(arm_control PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

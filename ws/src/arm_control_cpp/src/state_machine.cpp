@@ -52,6 +52,7 @@ void StateMachine::changeState(RobotContext& ctx, RobotState new_state)
 
     ctx.state = new_state;
     ctx.last_state = std::chrono::steady_clock::now();
+    ctx.step = 0;
 }
 
 /*
@@ -133,16 +134,12 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
     if (ctx.state != RobotState::Pick) throw std::runtime_error("Improper state!");
     if (!ctx.at_pose && ctx.step == 0)
     {
-        ctx.step = 0;
+        ctx.step = 1;
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = ctx.target_pose;
         nextCommand.requested_state = RobotState::Pick;
         return nextCommand;
-    }
-    else
-    {
-        ctx.step = 1;
     }
     if (ctx.suction_state && ctx.step == 1)
     {
@@ -178,7 +175,9 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = ctx.target_pose;
         nextCommand.pose.pose.position.x -= 0.2;
+        nextCommand.pose.pose.position.z += 0.1;
         nextCommand.requested_state = RobotState::Retreat;
         return nextCommand;
     }

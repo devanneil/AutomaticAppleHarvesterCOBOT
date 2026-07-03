@@ -46,7 +46,7 @@ ArmController::ArmController() : Node("arm_controller")
     context_.last_qr_scan = context_.last_state;
 }
 ArmController::~ArmController() {
-    disableVacuum();
+
 }
 void ArmController::initializeMoveIt() 
 {
@@ -68,6 +68,10 @@ void ArmController::initializeMoveIt()
         get_logger(),
         "EEF link: %s",
         move_group_->getEndEffectorLink().c_str());
+
+    // auto pose = create_pose(0.0, 0.0, 0.75, M_PI, 0, 0, "QR_Code_1");
+    // moveToPose(pose, true, "suction_link");
+    // throw std::runtime_error("testing");
 }
 
 void ArmController::appleCallback(
@@ -89,9 +93,12 @@ void ArmController::suctionCallback(
 {
     latest_vacuum_state_ = msg->data;
     uint8_t mask = (16 << relay_num); // Last 4 bits of integer
+    if (latest_vacuum_state_ & mask) vacuum_consensus_count_++;
+    else vacuum_consensus_count_ = 0;
+    if (vacuum_consensus_count_ > 5 && !context_.suction_state)
     {
         std::lock_guard<std::mutex> lock(context_mutex_);
-        context_.suction_state = (latest_vacuum_state_ & mask);
+        context_.suction_state = true;
     }
 }
 void ArmController::rvizJoyCallback(
@@ -120,7 +127,7 @@ void ArmController::rvizJoyCallback(
 }
 bool ArmController::moveToPose(
     const geometry_msgs::msg::PoseStamped& target,
-    bool blocking = true,
+    bool blocking = false,
     const std::string end_effector = "suction_link"
     )
 {   
@@ -138,7 +145,10 @@ bool ArmController::moveToPose(
         target.pose.position.y,
         target.pose.position.z);
     if(poseEqual(current_pose, target)) return true;
+    move_group_->setStartStateToCurrentState();
     move_group_->setPoseTarget(target, end_effector);
+
+    moveit::planning_interface::MoveGroupInterface::Plan plan;
 
     bool success =
         (move_group_->plan(plan) ==
@@ -146,14 +156,17 @@ bool ArmController::moveToPose(
 
     if (!success)
     {
+        move_group_->stop();              // critical
+        move_group_->clearPoseTargets();  // critical
         RCLCPP_WARN(get_logger(), "GOAL REJECTED!");
         return false;
     }
     else
     {
-        //if(blocking) visual_tools_->prompt("Execute planned trajectory?");
+        if(blocking) visual_tools_->prompt("Execute planned trajectory?");
         return move_group_->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS;
     }
+    move_group_->clearPoseTargets();  // critical
     return false;
 }
 
@@ -291,19 +304,28 @@ void ArmController::triggerVacuum() {
     req->relay_id = relay_num;
     req->state = true;
     suction_client_->async_send_request(req);
+    // {
+    //     std::lock_guard<std::mutex> lock(context_mutex_);
+    //     context_.suction_state = true;
+    // }  
     suction_running_ = true;
     last_suction_ = std::chrono::steady_clock::now();
 }
-void ArmController::disableVacuum() {
+rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedFuture ArmController::disableVacuum() {
     if (!suction_client_->wait_for_service(std::chrono::milliseconds(500))) {
         RCLCPP_ERROR(get_logger(), "Suction service not available");
-        return;
+        return {};
     }
     RCLCPP_INFO(get_logger(), "Sending suction request: OFF");
     auto req = std::make_shared<apple_interfaces::srv::SuctionCommand::Request>();
     req->relay_id = relay_num;
     req->state = false;
     auto future = suction_client_->async_send_request(req);
+    {
+        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+        context_.suction_state = false;
+    }
+    return future;
 }
 void ArmController::monitorVacuum() {
     if(suction_running_) {

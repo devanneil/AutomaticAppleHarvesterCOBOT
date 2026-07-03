@@ -28,7 +28,7 @@ public:
     void controlLoop();
     bool break_;
     bool holdForUser();
-    void disableVacuum();
+    rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedFuture disableVacuum();
 private:
 
     void appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
@@ -71,7 +71,7 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
 
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
-    moveit::planning_interface::MoveGroupInterface::Plan plan;
+    // moveit::planning_interface::MoveGroupInterface::Plan plan;
 
     std::shared_ptr<moveit_visual_tools::MoveItVisualTools> visual_tools_;
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr rviz_gui_sub_;
@@ -79,7 +79,7 @@ private:
     rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedPtr suction_client_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr suction_sub_;
 
-
+    int vacuum_consensus_count_ = 0;
     uint8_t latest_vacuum_state_ = 0;
     mutable std::mutex context_mutex_;
     bool suction_running_;
