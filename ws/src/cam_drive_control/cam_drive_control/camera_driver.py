@@ -17,6 +17,8 @@ import threading
 import time
 
 from ultralytics import YOLO
+from qreader import QReader
+
 
 from apple_interfaces.msg import CameraConsensus
 from apple_interfaces.srv import CloudScan
@@ -75,7 +77,7 @@ class CameraDriver(Node):
                     f"Failed to load YOLO model: {e}"
                 )
 
-        self.qr_model = 1
+        self.qr_model = QReader()
 
         camera_sn = "GDS871PBAA7110621" # Will come from hardware manager
         self.camera_info = None # Visual camera info
@@ -84,8 +86,10 @@ class CameraDriver(Node):
         #==================VARIABLES===========================
         self.image_lock = threading.Lock()
         self.latest_image_raw = None
+        self.image_count_since_last_state = 0
         self.results_lock = threading.Lock()
         self.results = None
+        self.results_qr = None
         self.selected_lock = threading.Lock()
         self.selected_results = list()
         self.mode_lock = threading.Lock()
@@ -121,12 +125,18 @@ class CameraDriver(Node):
     def image_callback(self, msg):
         with self.image_lock:
             self.latest_image_raw = self.convert_image(msg)
+            self.image_count_since_last_state += 1
 
         if self.mode == PerceptionMode.APPLE:
             self.detect_apples()
 
         if self.mode == PerceptionMode.QR:
             self.detect_qr()
+
+        # self.get_logger().info(
+        #     f"mode={self.mode} images={self.image_count_since_last_state}"
+        # )
+
     
     def convert_image(self, msg):
         try:
@@ -154,6 +164,8 @@ class CameraDriver(Node):
             self.clicked_locations.clear()
 
         iter_results = self.apple_model(self.latest_image_raw, verbose=False)
+        if len(iter_results) == 0:
+            return
 
         with self.results_lock:
             self.results = iter_results[0]
@@ -169,9 +181,9 @@ class CameraDriver(Node):
                     if float(box.conf[0]) < self.confidence_threshold:
                         return
 
-                    self.get_logger().info(
-                        f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
-                    )
+                    # self.get_logger().info(
+                    #     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
+                    # )
 
                     newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0])
                     append = True
@@ -186,7 +198,10 @@ class CameraDriver(Node):
         
 
     def detect_qr(self):
-        return
+        detections = self.qr_model.detect(self.latest_image_raw, False)
+        if len(detections) != 0:
+            with self.results_lock:
+                self.results_qr = detections
 
     def handle_click(self, u, v):
         with self.cv_lock:
@@ -198,7 +213,10 @@ class CameraDriver(Node):
 
     def get_image_results(self):
         with self.results_lock:
-            return self.results
+            return (
+                copy.copy(self.results),
+                copy.copy(self.results_qr)
+            )
 
     def goal_callback(self, goal_request):
         if goal_request.order not in (
@@ -211,24 +229,71 @@ class CameraDriver(Node):
         if self.apple_model is None or self.qr_model is None:
             self.get_logger().warn("Scan requested on no inference.")
             return GoalResponse.REJECT
+        if goal_request.order == VisionScan.Goal.APPLE_SCAN:
+            if self.mode != PerceptionMode.APPLE:
+                self.mode = PerceptionMode.APPLE
 
+                #self.get_logger().info("Changing to apple mode")
+        else:
+            if self.mode != PerceptionMode.QR:
+                self.mode = PerceptionMode.QR
+
+                #self.get_logger().info("Changing to qr mode")
+
+        with self.image_lock:
+            self.image_count_since_last_state = 0
+        with self.results_lock:
+            self.results = None
+            self.reults_qr = None    
         return GoalResponse.ACCEPT
 
     def cancel_callback(self, goal_handle):
         return CancelResponse.ACCEPT
     def execute_callback(self, goal_handle):
         goal = goal_handle.request
-        if goal.order == VisionScan.Goal.APPLE_SCAN:
-            with self.selected_lock:
-                local_results = list(self.selected_results)
-                self.selected_results.clear()
-        else:
-            local_results = list()
-            # Enable qr scanning and find consensus
+        rate = self.create_rate(50)
+        while rclpy.ok():
+            if self.image_count_since_last_state > 20:
+                goal_handle.abort()
+                result = VisionScan.Result()
+                result.status = "No consensus found!"
+                with self.results_lock:
+                    self.results = None
+                    self.reults_qr = None
+                self.mode = PerceptionMode.APPLE
+                return result
+            with self.results_lock:
+                if self.mode == PerceptionMode.APPLE and self.results is not None:
+                    local_results = list(self.selected_results)
+                    self.selected_results.clear()
+                    break
+                if self.mode == PerceptionMode.QR and self.results_qr is not None:
+                    local_results = list()
+                    best = max(self.results_qr, key=lambda d: d["confidence"])
+                    x1, y1, x2, y2 = map(int, np.round(best["bbox_xyxy"]))
+
+                    padding = 40  # pixels
+
+                    height, width = self.latest_image_raw.shape[:2]
+
+                    x1 = max(0, x1 - padding)
+                    y1 = max(0, y1 - padding)
+                    x2 = min(width - 1, x2 + padding)
+                    y2 = min(height - 1, y2 + padding)
+
+                    local_results.append(ConsensusStruct(x1, y1, x2, y2, best["confidence"]))
+                    break
+
+            rate.sleep()
+        self.mode = PerceptionMode.APPLE
+        # Enable qr scanning and find consensus
         if len(local_results) == 0:
             goal_handle.abort()
             result = VisionScan.Result()
             result.status = "No selectable results"
+            with self.results_lock:
+                self.results = None
+                self.reults_qr = None
             return result
         pixel_locations = list()
         for cons in local_results:
@@ -251,7 +316,6 @@ class CameraDriver(Node):
         future = self.camera_consensus_client.call_async(scan_request)
         future.add_done_callback(self.service_callback)
 
-        rate = self.create_rate(50)
         with self.service_lock:
             self.service_result = None
             while rclpy.ok():
@@ -260,6 +324,9 @@ class CameraDriver(Node):
                     goal_handle.canceled()
                     result = VisionScan.Result()
                     result.status = "Canceled"
+                    with self.results_lock:
+                        self.results = None
+                        self.reults_qr = None
                     return result
 
                 # check completion
@@ -275,6 +342,9 @@ class CameraDriver(Node):
             goal_handle.abort()
             result = VisionScan.Result()
             result.status = "PointCloud scan failure"
+            with self.results_lock:
+                self.results = None
+                self.reults_qr = None
             return result
 
         world_locations = scan_result.world_locations
@@ -295,7 +365,6 @@ class CameraDriver(Node):
 
     def service_callback(self, future):
         try:
-            self.get_logger().info("Service complete")
             self.service_result = future.result()
         except Exception as e:
             self.get_logger().error(str(e))

@@ -1,4 +1,4 @@
-from cam_drive_control.camera_driver import CameraDriver
+from cam_drive_control.camera_driver import CameraDriver, PerceptionMode
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -7,6 +7,7 @@ from rclpy.parameter import Parameter
 import cv2
 import threading
 import time
+import numpy as np
 
 node = None
 def main(args=None):
@@ -31,11 +32,36 @@ def main(args=None):
             time.sleep(0.1)
             continue
         frame = None
-        image_results = node.get_image_results()
-        if image_results is not None:
+        image_results, qr_results = node.get_image_results()
+        if node.mode == PerceptionMode.APPLE and image_results is not None:
+            # Apple case, image_results is ultralytics object
             annotated_img = image_results.plot()
+            for cons in node.selected_results:
+                cv2.rectangle(
+                    annotated_img,
+                    (int(cons.u1), int(cons.v1)),
+                    (int(cons.u2), int(cons.v2)),
+                    (0, 255, 0),
+                    3
+                )
             if annotated_img is not None:
                 cv2.imshow("Camera View", annotated_img)
+        # QR Case, image_results is tuple of (4,2)
+        elif node.mode == PerceptionMode.QR and qr_results is not None:
+            image = node.get_image_raw()
+            if image is not None:
+                best = max(qr_results, key=lambda d: d["confidence"])
+
+                quad = np.round(best["quad_xy"]).astype(np.int32)
+                if quad is not None:
+                    cv2.polylines(
+                        image,
+                        [quad],
+                        isClosed=True,
+                        color=(0, 255, 0),
+                        thickness=2,
+                    )
+                cv2.imshow("Camera View", image)
         else:
             frame = node.get_image_raw()
             if frame is not None:
