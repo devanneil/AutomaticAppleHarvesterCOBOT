@@ -26,7 +26,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'cam_drive_control = cam_drive_control.cam_drive_control:main'
+            'cam_drive_control = cam_drive_control.cam_drive_control:main',
+            'user_drive_control = cam_drive_control.user_drive_control:main'
         ],
     },
 )

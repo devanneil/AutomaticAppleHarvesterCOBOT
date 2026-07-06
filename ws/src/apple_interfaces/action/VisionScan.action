@@ -1,0 +1,12 @@
+# Goal
+uint8 order
+uint8 APPLE_SCAN=0
+uint8 QR_SCAN=1
+---
+# Result
+string status
+geometry_msgs/PoseStamped[] apples
+geometry_msgs/PoseStamped qr_pose
+---
+# Feedback
+bool success

@@ -11,6 +11,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/CloudScan.srv"
   "srv/UpdateBin.srv"
   "msg/CameraConsensus.msg"
+  "action/VisionScan.action"
   DEPENDENCIES
   std_msgs
   geometry_msgs
