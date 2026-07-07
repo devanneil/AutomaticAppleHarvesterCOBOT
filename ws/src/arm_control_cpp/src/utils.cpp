@@ -52,7 +52,7 @@ geometry_msgs::msg::PoseStamped twistPick(
 ) 
 {
     double twist_rad = -M_PI/2 - degreesToRadians(twist_angle);
-    return create_pose(pose.pose.position.x, pose.pose.position.y, pose.pose.position.z, twist_rad, 0, -M_PI/2); //Temp function
+    return create_pose(pose.pose.position.x, pose.pose.position.y, pose.pose.position.z, twist_rad, 0, -M_PI/2, "base_link"); //Temp function
 }
 
 bool poseEqual(const geometry_msgs::msg::PoseStamped& pose_1,

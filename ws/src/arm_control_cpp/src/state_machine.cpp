@@ -166,6 +166,10 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
         ctx.step = 0;
         return nextCommand;
     }
+    RobotCommand nextCommand;
+    nextCommand.type = CommandType::None;
+    nextCommand.requested_state = RobotState::Pick;
+    return nextCommand;
 }
 
 RobotCommand StateMachine::handleRetreat(RobotContext& ctx)

@@ -45,6 +45,7 @@ ArmController::ArmController() : Node("arm_controller")
     context_.planning_group = "arm_1";
     context_.last_state = std::chrono::steady_clock::now();
     context_.last_qr_scan = context_.last_state;
+    context_.suction_state = false;
 }
 ArmController::~ArmController() {
 
@@ -146,29 +147,57 @@ bool ArmController::moveToPose(
         target.pose.position.y,
         target.pose.position.z);
     if(poseEqual(current_pose, target)) return true;
+    move_group_->clearPoseTargets();
     move_group_->setStartStateToCurrentState();
-    move_group_->setPoseTarget(target, end_effector);
+    if (!move_group_->setPoseTarget(target, end_effector))
+    {
+        RCLCPP_ERROR(get_logger(), "Failed to set pose target.");
+        return false;
+    }
 
     moveit::planning_interface::MoveGroupInterface::Plan plan;
 
-    bool success =
+    bool planned =
         (move_group_->plan(plan) ==
-         moveit::core::MoveItErrorCode::SUCCESS);
+        moveit::core::MoveItErrorCode::SUCCESS);
 
-    if (!success)
+    if (!planned)
     {
-        move_group_->stop();              // critical
-        move_group_->clearPoseTargets();  // critical
-        RCLCPP_WARN(get_logger(), "GOAL REJECTED!");
+        RCLCPP_WARN(get_logger(), "Planning failed.");
+
+        move_group_->stop();
+        
+        rclcpp::sleep_for(std::chrono::milliseconds(250));
+
+        move_group_->clearPoseTargets();
+        move_group_->setStartStateToCurrentState();
+
         return false;
     }
-    else
+
+    if (blocking)
+        visual_tools_->prompt("Execute planned trajectory?");
+
+    auto result = move_group_->execute(plan);
+
+    RCLCPP_INFO(get_logger(),
+            "Execute returned %d",
+            result.val);
+
+
+    if (result != moveit::core::MoveItErrorCode::SUCCESS)
     {
-        if(blocking) visual_tools_->prompt("Execute planned trajectory?");
-        return move_group_->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS;
+        RCLCPP_ERROR(get_logger(), "Trajectory execution failed.");
+
+        move_group_->stop();
+        move_group_->clearPoseTargets();
+        move_group_->setStartStateToCurrentState();
+
+        throw std::runtime_error("Arm control execute failure!");
+        return false;
     }
-    move_group_->clearPoseTargets();  // critical
-    return false;
+
+    return true;
 }
 
 void ArmController::controlLoop()
