@@ -9,6 +9,7 @@
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 #include "apple_interfaces/srv/suction_command.hpp"
+#include "apple_interfaces/action/vision_scan.hpp"
 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit_visual_tools/moveit_visual_tools.h>
@@ -31,7 +32,7 @@ public:
     rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedFuture disableVacuum();
 private:
 
-    void appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    //void appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void suctionCallback(const std_msgs::msg::UInt8::SharedPtr msg);
     void rvizJoyCallback(const sensor_msgs::msg::Joy::SharedPtr msg);
 
@@ -52,6 +53,24 @@ private:
 
     void triggerVacuum();
     void monitorVacuum();
+    bool createVisionScan(uint8_t scan_type);
+    bool createAppleScan();
+    bool createQRScan();
+
+    using VisionScan = apple_interfaces::action::VisionScan;
+    using GoalHandleVisionScan = rclcpp_action::ClientGoalHandle<VisionScan>;
+
+    GoalHandleVisionScan::SharedPtr vision_goal_handle_;
+
+    void goal_response_callback(
+        GoalHandleVisionScan::SharedPtr goal_handle);
+
+    void feedback_callback(
+        GoalHandleVisionScan::SharedPtr,
+        const std::shared_ptr<const VisionScan::Feedback> feedback);
+
+    void result_callback(
+        const GoalHandleVisionScan::WrappedResult & result);
 
     bool block;
 
@@ -66,7 +85,8 @@ private:
     std::deque<geometry_msgs::msg::PoseStamped::SharedPtr> apple_pose_queue_;
     geometry_msgs::msg::PoseStamped::SharedPtr home_;
 
-    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr apple_sub_;
+    // rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr apple_sub_;
+    rclcpp_action::Client<apple_interfaces::action::VisionScan>::SharedPtr camera_client_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 

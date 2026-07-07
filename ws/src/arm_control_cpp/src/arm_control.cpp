@@ -10,12 +10,13 @@ ArmController::ArmController() : Node("arm_controller")
     rclcpp::SubscriptionOptions sub_options;
     sub_options.callback_group = sub_callback_group_;
     std::string apple_pose_topic = "/" + ARM_NUM + "/apple_locations";
-    apple_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-        apple_pose_topic,
-        10,
-        std::bind( &ArmController::appleCallback, this, std::placeholders::_1),
-        sub_options
-    );
+    // apple_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+    //     apple_pose_topic,
+    //     10,
+    //     std::bind( &ArmController::appleCallback, this, std::placeholders::_1),
+    //     sub_options
+    // );
+    camera_client_ = rclcpp_action::create_client<apple_interfaces::action::VisionScan>(this, "/cam_drive_control/vision_scan");
     apple_pose_queue_ = std::deque<geometry_msgs::msg::PoseStamped::SharedPtr>();
     suction_sub_ = create_subscription<std_msgs::msg::UInt8>(
         "/suction_state",
@@ -74,20 +75,20 @@ void ArmController::initializeMoveIt()
     // throw std::runtime_error("testing");
 }
 
-void ArmController::appleCallback(
-    const geometry_msgs::msg::PoseStamped::SharedPtr msg)
-{
-    if (!isDuplicatePose(msg))
-    {
-        msg->pose.position.z += 0.02;
-        msg->pose.position.y -= 0.02;
-        apple_pose_queue_.push_back(msg);
-    }
-    {
-        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
-        context_.consensus_size++;
-    }
-}
+// void ArmController::appleCallback(
+//     const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+// {
+//     if (!isDuplicatePose(msg))
+//     {
+//         msg->pose.position.z += 0.02;
+//         msg->pose.position.y -= 0.02;
+//         apple_pose_queue_.push_back(msg);
+//     }
+//     {
+//         std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+//         context_.consensus_size++;
+//     }
+// }
 void ArmController::suctionCallback(
     const std_msgs::msg::UInt8::SharedPtr msg)
 {
@@ -245,10 +246,12 @@ void ArmController::controlLoop()
             //move_group_->stop();
             break;
         case CommandType::VisionScan:
-            RCLCPP_INFO(get_logger(), "Vision scan here!");
+            RCLCPP_INFO(get_logger(), "Vision scan command");
+            createAppleScan();
             break;
         case CommandType::QRScan:
-            RCLCPP_INFO(get_logger(), "QR Scan Here!");
+            RCLCPP_INFO(get_logger(), "QR Scan command");
+            createQRScan();
             break;
         default:
             RCLCPP_INFO(get_logger(), "No command specified!");
@@ -343,6 +346,157 @@ void ArmController::monitorVacuum() {
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
     return;
 }
+bool ArmController::createVisionScan(uint8_t scan_type)
+{
+    if (!camera_client_->wait_for_action_server(
+            std::chrono::seconds(5)))
+    {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "Vision scan action server unavailable"
+        );
+        return false;
+    }
+
+    VisionScan::Goal goal_msg;
+    goal_msg.order = scan_type;
+
+    rclcpp_action::Client<VisionScan>::SendGoalOptions options;
+
+    options.goal_response_callback =
+        std::bind(
+            &ArmController::goal_response_callback,
+            this,
+            std::placeholders::_1
+        );
+
+    options.feedback_callback =
+        std::bind(
+            &ArmController::feedback_callback,
+            this,
+            std::placeholders::_1,
+            std::placeholders::_2
+        );
+
+    options.result_callback =
+        std::bind(
+            &ArmController::result_callback,
+            this,
+            std::placeholders::_1
+        );
+
+    camera_client_->async_send_goal(goal_msg, options);
+
+    return true;
+}
+
+bool ArmController::createAppleScan()
+{
+    return createVisionScan(
+        VisionScan::Goal::APPLE_SCAN
+    );
+}
+
+
+bool ArmController::createQRScan()
+{
+    return createVisionScan(
+        VisionScan::Goal::QR_SCAN
+    );
+}
+
+void ArmController::goal_response_callback(
+    GoalHandleVisionScan::SharedPtr goal_handle)
+{
+    if (!goal_handle)
+    {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "Vision scan goal rejected"
+        );
+        return;
+    }
+
+    vision_goal_handle_ = goal_handle;
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Vision scan goal accepted"
+    );
+}
+
+void ArmController::feedback_callback(
+    GoalHandleVisionScan::SharedPtr,
+    const std::shared_ptr<const VisionScan::Feedback> feedback)
+{
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Vision feedback success: %s",
+        feedback->success ? "true" : "false"
+    );
+    for (const auto & apple : feedback->apples)
+    {
+        apple_pose_queue_.push_back(std::make_shared<geometry_msgs::msg::PoseStamped>(apple));
+        {
+            std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+            context_.consensus_size++;
+        }
+    }
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "QR pose: x=%f y=%f z=%f",
+        feedback->qr_pose.pose.position.x,
+        feedback->qr_pose.pose.position.y,
+        feedback->qr_pose.pose.position.z
+    );
+    vision_goal_handle_.reset();
+}
+
+void ArmController::result_callback(
+    const GoalHandleVisionScan::WrappedResult & result)
+{
+    switch(result.code)
+    {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+        {
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Vision scan succeeded"
+            );
+
+            auto result_msg = result.result;
+
+            // Example:
+            // result_msg->apples
+            // result_msg->qr_pose
+
+            break;
+        }
+
+        case rclcpp_action::ResultCode::ABORTED:
+            RCLCPP_ERROR(
+                this->get_logger(),
+                "Vision scan aborted"
+            );
+            break;
+
+        case rclcpp_action::ResultCode::CANCELED:
+            RCLCPP_WARN(
+                this->get_logger(),
+                "Vision scan canceled"
+            );
+            break;
+
+        default:
+            RCLCPP_ERROR(
+                this->get_logger(),
+                "Unknown result code"
+            );
+            break;
+    }
+}
+
 geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
     auto target = apple_pose_queue_.front();
     apple_pose_queue_.pop_front();

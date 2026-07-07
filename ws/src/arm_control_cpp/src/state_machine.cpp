@@ -214,6 +214,7 @@ RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::HeatScan) throw std::runtime_error("Improper state!");
     RobotCommand tempCommand;
+    tempCommand.type = CommandType::VisionScan;
     tempCommand.requested_state = RobotState::Monitor;
     return tempCommand;
 }

@@ -350,15 +350,15 @@ class CameraDriver(Node):
         world_locations = scan_result.world_locations
         feedback_msg = VisionScan.Feedback()
         feedback_msg.success = True
+        if goal.order == VisionScan.Goal.APPLE_SCAN:
+            feedback_msg.apples = world_locations
+        else:
+            feedback_msg.qr_pose = world_locations[0]
         goal_handle.publish_feedback(feedback_msg)
 
         goal_handle.succeed()
         result = VisionScan.Result()
 
-        if goal.order == VisionScan.Goal.APPLE_SCAN:
-            result.apples = world_locations
-        else:
-            result.qr_pose = world_locations[0]
         self.get_logger().info(f'Goal succeeded!')
         return result
 

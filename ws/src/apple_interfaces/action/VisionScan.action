@@ -5,8 +5,8 @@ uint8 QR_SCAN=1
 ---
 # Result
 string status
-geometry_msgs/PoseStamped[] apples
-geometry_msgs/PoseStamped qr_pose
 ---
 # Feedback
 bool success
+geometry_msgs/PoseStamped[] apples
+geometry_msgs/PoseStamped qr_pose
