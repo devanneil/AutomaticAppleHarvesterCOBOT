@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
 def node_thread():
     global node
-    executor = MultiThreadedExecutor(num_threads=4)
+    executor = MultiThreadedExecutor(num_threads=5)
     executor.add_node(node)
 
     try:

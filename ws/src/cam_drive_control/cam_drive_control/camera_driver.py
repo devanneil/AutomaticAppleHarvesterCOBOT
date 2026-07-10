@@ -146,7 +146,7 @@ class CameraDriver(Node):
             self.detect_apples(self.latest_image_raw, depth_msg)
 
         if self.mode == PerceptionMode.QR:
-            self.detect_apples(self.latest_image_raw, depth_msg)
+            self.detect_qr(self.latest_image_raw, depth_msg)
 
         # self.get_logger().info(
         #     f"mode={self.mode} images={self.image_count_since_last_state}"
@@ -247,11 +247,11 @@ class CameraDriver(Node):
             x2 = min(width - 1, x2 + padding)
             y2 = min(height - 1, y2 + padding)
             t_base_cam = self.tf_buffer.lookup_transform(
-                depth_ros_msg.header.frame_id,
                 "base_link",
+                depth_ros_msg.header.frame_id,
                 depth_ros_msg.header.stamp
             )
-            newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0], 
+            newCons = ConsensusStruct(x1, y1, x2, y2, best["confidence"], 
                 self.convert_image(depth_ros_msg), t_base_cam)
             with self.results_lock:
                 self.results_qr = newCons
@@ -309,7 +309,10 @@ class CameraDriver(Node):
             if self.image_count_since_last_state > 20:
                 goal_handle.abort()
                 result = VisionScan.Result()
-                result.status = "No consensus found!"
+                if self.cx is not None:
+                    result.status = "No consensus found!"
+                else:
+                    result.status = "Failed to init camera!"
                 with self.results_lock:
                     self.results = None
                     self.reults_qr = None
@@ -321,7 +324,9 @@ class CameraDriver(Node):
                     self.selected_results.clear()
                     break
                 if self.mode == PerceptionMode.QR and self.results_qr is not None and self.cx is not None:
-                    local_results = list(self.results_qr)
+                    local_results = list()
+                    local_results.append(self.results_qr)
+                    self.results_qr = None
                     break
 
             rate.sleep()
@@ -411,6 +416,8 @@ class CameraDriver(Node):
 
         pose = PoseStamped()
         pose.pose = transformedPose
+
+        pose.pose.position.z += 0.1
         
         pose.pose.orientation.x = 0.5
         pose.pose.orientation.y = -0.5

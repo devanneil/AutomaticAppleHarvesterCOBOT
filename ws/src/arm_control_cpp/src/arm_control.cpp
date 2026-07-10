@@ -75,9 +75,15 @@ void ArmController::initializeMoveIt()
         "EEF link: %s",
         move_group_->getEndEffectorLink().c_str());
 
-    // auto pose = create_pose(0, 0.135, 0, -2.754, 0.5, 0, "QR_Code_1");
+    createQRScan();
+    auto start = std::chrono::steady_clock::now();
+    while(!timeout_elapsed(start, std::chrono::seconds(5)))
+    {
+        rclcpp::sleep_for(std::chrono::milliseconds(100));
+    }
+    // auto pose = create_pose(0.0, 0.025, 0.2, -2.754, 0.5, 0, "QR_Code_1");
     // moveToPose(pose, true, "suction_link");
-    // throw std::runtime_error("testing");
+    throw std::runtime_error("testing");
 }
 
 // void ArmController::appleCallback(
@@ -468,6 +474,10 @@ void ArmController::feedback_callback(
         "Vision feedback success: %s",
         feedback->success ? "true" : "false"
     );
+    {
+        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+        context_.vision_scan_fail = !feedback->success;
+    }
     if (last_goal_order_ == VisionScan::Goal::APPLE_SCAN)
     {
         for (const auto & apple : feedback->apples)
@@ -482,17 +492,17 @@ void ArmController::feedback_callback(
     if (last_goal_order_ == VisionScan::Goal::QR_SCAN)
     {
         auto pose = feedback->qr_pose;
-        // RCLCPP_INFO(
-        //     get_logger(),
-        //     "QRPose [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
-        //     pose.header.frame_id.c_str(),
-        //     pose.pose.position.x,
-        //     pose.pose.position.y,
-        //     pose.pose.position.z,
-        //     pose.pose.orientation.x,
-        //     pose.pose.orientation.y,
-        //     pose.pose.orientation.z,
-        //     pose.pose.orientation.w);
+        RCLCPP_INFO(
+            get_logger(),
+            "QRPose [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
+            pose.header.frame_id.c_str(),
+            pose.pose.position.x,
+            pose.pose.position.y,
+            pose.pose.position.z,
+            pose.pose.orientation.x,
+            pose.pose.orientation.y,
+            pose.pose.orientation.z,
+            pose.pose.orientation.w);
         updateBinPose(pose);
     }
     vision_goal_handle_.reset();
@@ -572,9 +582,9 @@ void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
     float y_qr_base = qr_pose.pose.position.y;
     float z_qr_base = qr_pose.pose.position.z;
 
-    float x_dummy_base = x_dummy_qr - x_qr_base;
-    float y_dummy_base = y_dummy_qr - y_qr_base;
-    float z_dummy_base = z_dummy_qr - z_qr_base;
+    float x_dummy_base = x_qr_base - x_dummy_qr;
+    float y_dummy_base = y_qr_base - y_dummy_qr;
+    float z_dummy_base = z_qr_base - z_dummy_qr;
 
     auto req = std::make_shared<apple_interfaces::srv::UpdateBin::Request>();
     req->new_pose[0] = x_dummy_base;
