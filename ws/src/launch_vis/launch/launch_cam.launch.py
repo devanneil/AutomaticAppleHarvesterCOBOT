@@ -86,11 +86,11 @@ def generate_launch_description():
             ]
         )
     )
-    nodes.append(
-        Node(
-            package="point_cloud_processor",
-            executable="point_cloud_processor"
-        )
-    )
+    # nodes.append(
+    #     Node(
+    #         package="point_cloud_processor",
+    #         executable="point_cloud_processor"
+    #     )
+    # )
 
     return LaunchDescription(nodes)

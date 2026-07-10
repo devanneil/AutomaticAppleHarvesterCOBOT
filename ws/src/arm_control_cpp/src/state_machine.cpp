@@ -158,7 +158,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
         ctx.step = 0;
         return nextCommand;
     }
-    if (duration_since(ctx.last_state) > std::chrono::milliseconds(5000))
+    if (timeout_elapsed(ctx.last_state, std::chrono::milliseconds(5000)))
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
@@ -175,7 +175,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
 RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Retreat) throw std::runtime_error("Improper state!");
-    if (!ctx.at_pose)
+    if(ctx.step == 0 && ctx.at_pose) 
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
@@ -183,30 +183,81 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
         nextCommand.pose.pose.position.x -= 0.2;
         nextCommand.pose.pose.position.z += 0.1;
         nextCommand.requested_state = RobotState::Retreat;
+        ctx.step = 1;
         return nextCommand;
     }
-    else
+    if (ctx.step == 1 && timeout_elapsed(ctx.last_qr_scan, std::chrono::minutes(3)))
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::QRScan;
+        nextCommand.requested_state = RobotState::QRScan;
+        ctx.step = 0;
+        return nextCommand;
+    } else if (ctx.step == 1)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::Monitor;
+        nextCommand.requested_state = RobotState::Chute;
+        ctx.step = 0;
         return nextCommand;
     }
+    RobotCommand nextCommand;
+    nextCommand.type = CommandType::None;
+    nextCommand.requested_state = RobotState::Retreat;
+    return nextCommand;
 }
 
 RobotCommand StateMachine::handleQRScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::QRScan) throw std::runtime_error("Improper state!");
+    if (ctx.step == 0)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = getPoseForState(ctx);
+        nextCommand.requested_state = RobotState::QRScan;
+        ctx.step = 1;
+        return nextCommand;
+    }
+    if (!timeout_elapsed(ctx.last_qr_scan, std::chrono::minutes(3)))
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Chute;
+        ctx.step = 0;
+        return nextCommand;
+    }
+    if (timeout_elapsed(ctx.last_state, std::chrono::milliseconds(5000)))
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = getPoseForState(ctx);
+        nextCommand.requested_state = RobotState::QRSearch;
+        ctx.step = 0;
+        return nextCommand;
+    }
+    RobotCommand nextCommand;
+    nextCommand.type = CommandType::None;
+    nextCommand.requested_state = RobotState::QRScan;
+    return nextCommand;
 }
 
 RobotCommand StateMachine::handleQRSearch(RobotContext& ctx)
 {
     if (ctx.state != RobotState::QRSearch) throw std::runtime_error("Improper state!");
+    RobotCommand tempCommand;
+    tempCommand.type = CommandType::None;
+    tempCommand.requested_state = RobotState::QRSearch;
+    return tempCommand;
 }
 
 RobotCommand StateMachine::handleChute(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Chute) throw std::runtime_error("Improper state!");
+    RobotCommand tempCommand;
+    tempCommand.type = CommandType::None;
+    tempCommand.requested_state = RobotState::Monitor;
+    return tempCommand;
 }
 
 RobotCommand StateMachine::handleChuteRetreat(RobotContext& ctx)

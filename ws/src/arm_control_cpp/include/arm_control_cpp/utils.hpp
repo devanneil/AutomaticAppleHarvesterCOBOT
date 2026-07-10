@@ -22,11 +22,20 @@ geometry_msgs::msg::PoseStamped create_pose(
 
 
 template<typename Duration = std::chrono::milliseconds>
-Duration duration_since(
-    const std::chrono::steady_clock::time_point& start)
+bool timeout_elapsed(
+    const std::chrono::steady_clock::time_point& start,
+    Duration timeout)
 {
-    return std::chrono::duration_cast<Duration>(
-        std::chrono::steady_clock::now() - start);
+    if (start == std::chrono::steady_clock::time_point::max())
+    {
+        return true;
+    }
+    if (start == std::chrono::steady_clock::time_point::min())
+    {
+        return true;
+    }
+
+    return std::chrono::steady_clock::now() - start >= timeout;
 }
 
 geometry_msgs::msg::PoseStamped twistPick(

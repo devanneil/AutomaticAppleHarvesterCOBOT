@@ -24,6 +24,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(apple_interfaces REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -74,6 +76,8 @@ ament_target_dependencies(arm_control
   std_srvs
   std_msgs
   apple_interfaces
+  tf2
+  tf2_ros
 )
 install(TARGETS
   arm_control

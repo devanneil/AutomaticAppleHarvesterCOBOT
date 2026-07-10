@@ -50,17 +50,14 @@ def main(args=None):
         elif node.mode == PerceptionMode.QR and qr_results is not None:
             image = node.get_image_raw()
             if image is not None:
-                best = max(qr_results, key=lambda d: d["confidence"])
-
-                quad = np.round(best["quad_xy"]).astype(np.int32)
-                if quad is not None:
-                    cv2.polylines(
-                        image,
-                        [quad],
-                        isClosed=True,
-                        color=(0, 255, 0),
-                        thickness=2,
-                    )
+                cons = node.results_qr
+                cv2.rectangle(
+                    image,
+                    (int(cons.u1), int(cons.v1)),
+                    (int(cons.u2), int(cons.v2)),
+                    (0, 255, 0),
+                    3
+                )
                 cv2.imshow("Camera View", image)
         else:
             frame = node.get_image_raw()

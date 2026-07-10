@@ -31,6 +31,7 @@ ArmController::ArmController() : Node("arm_controller")
         sub_options
     );
     suction_client_ = create_client<apple_interfaces::srv::SuctionCommand>("/suction_action");
+    bin_manager_client_ = create_client<apple_interfaces::srv::UpdateBin>("/update_bin");
     vacuum_timer_ = create_wall_timer(
         std::chrono::milliseconds(100),
         std::bind(&ArmController::monitorVacuum, this),
@@ -44,8 +45,11 @@ ArmController::ArmController() : Node("arm_controller")
     context_.state = RobotState::Monitor;
     context_.planning_group = "arm_1";
     context_.last_state = std::chrono::steady_clock::now();
-    context_.last_qr_scan = context_.last_state;
+    context_.last_qr_scan = std::chrono::steady_clock::time_point::max();
     context_.suction_state = false;
+
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 }
 ArmController::~ArmController() {
 
@@ -71,7 +75,7 @@ void ArmController::initializeMoveIt()
         "EEF link: %s",
         move_group_->getEndEffectorLink().c_str());
 
-    // auto pose = create_pose(-0.503, 0.412, 1.232, -2.007, -0.032, 1.149, "base_link");
+    // auto pose = create_pose(0, 0.135, 0, -2.754, 0.5, 0, "QR_Code_1");
     // moveToPose(pose, true, "suction_link");
     // throw std::runtime_error("testing");
 }
@@ -336,10 +340,10 @@ void ArmController::triggerVacuum() {
     req->relay_id = relay_num;
     req->state = true;
     suction_client_->async_send_request(req);
-    // {
-    //     std::lock_guard<std::mutex> lock(context_mutex_);
-    //     context_.suction_state = true;
-    // }  
+    {
+        std::lock_guard<std::mutex> lock(context_mutex_);
+        context_.suction_state = true;
+    }  
     suction_running_ = true;
     last_suction_ = std::chrono::steady_clock::now();
 }
@@ -415,6 +419,7 @@ bool ArmController::createVisionScan(uint8_t scan_type)
         );
 
     camera_client_->async_send_goal(goal_msg, options);
+    last_goal_order_ = scan_type;
 
     return true;
 }
@@ -463,22 +468,33 @@ void ArmController::feedback_callback(
         "Vision feedback success: %s",
         feedback->success ? "true" : "false"
     );
-    for (const auto & apple : feedback->apples)
+    if (last_goal_order_ == VisionScan::Goal::APPLE_SCAN)
     {
-        apple_pose_queue_.push_back(std::make_shared<geometry_msgs::msg::PoseStamped>(apple));
+        for (const auto & apple : feedback->apples)
         {
-            std::lock_guard<std::mutex> ctx_lock(context_mutex_);
-            context_.consensus_size++;
+            apple_pose_queue_.push_back(std::make_shared<geometry_msgs::msg::PoseStamped>(apple));
+            {
+                std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+                context_.consensus_size++;
+            }
         }
     }
-
-    RCLCPP_INFO(
-        this->get_logger(),
-        "QR pose: x=%f y=%f z=%f",
-        feedback->qr_pose.pose.position.x,
-        feedback->qr_pose.pose.position.y,
-        feedback->qr_pose.pose.position.z
-    );
+    if (last_goal_order_ == VisionScan::Goal::QR_SCAN)
+    {
+        auto pose = feedback->qr_pose;
+        // RCLCPP_INFO(
+        //     get_logger(),
+        //     "QRPose [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
+        //     pose.header.frame_id.c_str(),
+        //     pose.pose.position.x,
+        //     pose.pose.position.y,
+        //     pose.pose.position.z,
+        //     pose.pose.orientation.x,
+        //     pose.pose.orientation.y,
+        //     pose.pose.orientation.z,
+        //     pose.pose.orientation.w);
+        updateBinPose(pose);
+    }
     vision_goal_handle_.reset();
 }
 
@@ -534,4 +550,45 @@ geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
         context_.consensus_size--;
     }
     return *target;
+}
+
+void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
+{
+    geometry_msgs::msg::TransformStamped t_dummy_qr;
+    try {
+        t_dummy_qr = tf_buffer_->lookupTransform(
+            "dummy_link", "QR_Code_1",
+            tf2::TimePointZero);
+    } catch (const tf2::TransformException & ex) {
+        RCLCPP_INFO(
+            this->get_logger(), "Could not transform dummy_link to QR_Code_1: %s", ex.what());
+        return;
+    }
+    float x_dummy_qr = t_dummy_qr.transform.translation.x;
+    float y_dummy_qr = t_dummy_qr.transform.translation.y;
+    float z_dummy_qr = t_dummy_qr.transform.translation.z;
+
+    float x_qr_base = qr_pose.pose.position.x;
+    float y_qr_base = qr_pose.pose.position.y;
+    float z_qr_base = qr_pose.pose.position.z;
+
+    float x_dummy_base = x_dummy_qr - x_qr_base;
+    float y_dummy_base = y_dummy_qr - y_qr_base;
+    float z_dummy_base = z_dummy_qr - z_qr_base;
+
+    auto req = std::make_shared<apple_interfaces::srv::UpdateBin::Request>();
+    req->new_pose[0] = x_dummy_base;
+    req->new_pose[1] = y_dummy_base;
+    req->new_pose[2] = z_dummy_base;
+    using ServiceResponseFuture =
+        rclcpp::Client<apple_interfaces::srv::UpdateBin>::SharedFuture;
+    auto response_received_callback = [this](ServiceResponseFuture future) {
+        auto result = future.get();
+            if(result->success)
+            {
+                std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+                context_.last_qr_scan = std::chrono::steady_clock::now();
+            }
+        };
+    auto result = bin_manager_client_->async_send_request(req, response_received_callback);
 }

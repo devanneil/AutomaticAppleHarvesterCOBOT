@@ -4,11 +4,15 @@
 #include <queue>
 
 #include <rclcpp/rclcpp.hpp>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2/exceptions.h>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 #include "apple_interfaces/srv/suction_command.hpp"
+#include "apple_interfaces/srv/update_bin.hpp"
 #include "apple_interfaces/action/vision_scan.hpp"
 
 #include <moveit/move_group_interface/move_group_interface.h>
@@ -61,6 +65,7 @@ private:
     using GoalHandleVisionScan = rclcpp_action::ClientGoalHandle<VisionScan>;
 
     GoalHandleVisionScan::SharedPtr vision_goal_handle_;
+    uint8_t last_goal_order_;
 
     void goal_response_callback(
         GoalHandleVisionScan::SharedPtr goal_handle);
@@ -71,6 +76,8 @@ private:
 
     void result_callback(
         const GoalHandleVisionScan::WrappedResult & result);
+
+    void updateBinPose(geometry_msgs::msg::PoseStamped qr_pose);
 
     bool block;
 
@@ -99,6 +106,8 @@ private:
     rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedPtr suction_client_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr suction_sub_;
 
+    rclcpp::Client<apple_interfaces::srv::UpdateBin>::SharedPtr bin_manager_client_;
+
     int vacuum_consensus_count_ = 0;
     uint8_t latest_vacuum_state_ = 0;
     mutable std::mutex context_mutex_;
@@ -108,5 +117,9 @@ private:
     std::chrono::steady_clock::duration suction_timeout_ = std::chrono::milliseconds(5000);
     RobotContext context_;
     StateMachine state_machine_;
+    
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+
     bool busy_ = false;
 };

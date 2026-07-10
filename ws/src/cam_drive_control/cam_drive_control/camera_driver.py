@@ -1,12 +1,17 @@
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from ament_index_python.packages import get_package_share_directory
+from message_filters import Subscriber, ApproximateTimeSynchronizer
+from tf2_ros import Buffer, TransformListener
+# import tf_transformations  # For quaternion to Euler conversion
 
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
+from geometry_msgs.msg import TransformStamped, PoseStamped, Pose
+import tf2_geometry_msgs
 
 import torch
 import os
@@ -37,6 +42,8 @@ class ConsensusStruct:
     u2: int
     v2: int
     confidence: float
+    depth_field: np.ndarray
+    tf: TransformStamped
 
 def consensusEqual(C1: ConsensusStruct, C2: ConsensusStruct):
     corner1 = np.abs(C1.u1 - C2.u1) < 1.0 and np.abs(C1.v1 - C2.v1) < 1.0
@@ -96,22 +103,30 @@ class CameraDriver(Node):
         self.mode = PerceptionMode.APPLE
         self.service_result = None
         self.service_lock = threading.Lock()
+        self.cx = None
+        self.cy = None
+        self.fx = None
+        self.fy = None
         #==================USER DEPENDENT VARIABLES===========
         self.cv_lock = threading.Lock()
         self.clicked_locations = list()
         #==================TOPICS==============================
-        self.callback_group = ReentrantCallbackGroup()
+        self.camera_group = MutuallyExclusiveCallbackGroup()
+        self.action_group = MutuallyExclusiveCallbackGroup()
         # Create a subscriber to the /camera/image_raw topic
-        self.camera_subscription = self.create_subscription(
-            Image,
-            f'/arm1_cam/{camera_sn}/color/image_raw', 
-            self.image_callback,
-            10
+        self.vis_sub = Subscriber(self, Image, f'/arm1_cam/{camera_sn}/color/image_raw', callback_group=self.camera_group)
+        self.depth_sub = Subscriber(self, Image, f'/arm1_cam/{camera_sn}/transformedDepth/image_raw', callback_group=self.camera_group)
+        self.ts = ApproximateTimeSynchronizer([self.vis_sub, self.depth_sub], 10, 0.1)
+        self.ts.registerCallback(self.image_callback)
+        self.cam_intrinsics_sub = self.create_subscription(
+            CameraInfo,
+            f'/arm1_cam/{camera_sn}/color/camera_info',
+            self.cam_info_callback,
+            10,
+            callback_group=self.camera_group
         )
-        self.camera_consensus_client = self.create_client(
-            CloudScan, "/arm1/cloud_scan",
-            callback_group=self.callback_group
-        )
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         self.vision_action = ActionServer(
             self,
             VisionScan,
@@ -119,51 +134,66 @@ class CameraDriver(Node):
             execute_callback=self.execute_callback,
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
-            callback_group=self.callback_group
+            callback_group=self.action_group
         )
     
-    def image_callback(self, msg):
+    def image_callback(self, image_msg, depth_msg):
         with self.image_lock:
-            self.latest_image_raw = self.convert_image(msg)
+            self.latest_image_raw = self.convert_image(image_msg)
             self.image_count_since_last_state += 1
 
         if self.mode == PerceptionMode.APPLE:
-            self.detect_apples()
+            self.detect_apples(self.latest_image_raw, depth_msg)
 
         if self.mode == PerceptionMode.QR:
-            self.detect_qr()
+            self.detect_apples(self.latest_image_raw, depth_msg)
 
         # self.get_logger().info(
         #     f"mode={self.mode} images={self.image_count_since_last_state}"
         # )
 
-    
+    def cam_info_callback(self, msg):
+        if self.cx is not None:
+            return
+
+        self.fx = msg.k[0]
+        self.fy = msg.k[4]
+        self.cx = msg.k[2]
+        self.cy = msg.k[5]
+
     def convert_image(self, msg):
         try:
-            # Convert ROS2 Image message to NumPy array
-            img_array = np.frombuffer(msg.data, dtype=np.uint8)
-            img_bgr = None
-            # Reshape based on encoding
-            if msg.encoding == 'rgb8':
+            if msg.encoding == "rgb8":
+                img_array = np.frombuffer(msg.data, dtype=np.uint8)
                 img_array = img_array.reshape((msg.height, msg.width, 3))
-                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            elif msg.encoding == 'bgr8':
-                img_bgr = img_array.reshape((msg.height, msg.width, 3))
-            elif msg.encoding == 'mono8':
-                img_bgr = img_array.reshape((msg.height, msg.width))
+                return cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
+            elif msg.encoding == "bgr8":
+                img_array = np.frombuffer(msg.data, dtype=np.uint8)
+                return img_array.reshape((msg.height, msg.width, 3))
+
+            elif msg.encoding == "mono8":
+                img_array = np.frombuffer(msg.data, dtype=np.uint8)
+                return img_array.reshape((msg.height, msg.width))
+
+            elif msg.encoding == "16UC1":
+                img_array = np.frombuffer(msg.data, dtype=np.uint16)
+                return img_array.reshape((msg.height, msg.width))
+
             else:
                 self.get_logger().warn(f"Unsupported encoding: {msg.encoding}")
                 return None
-            return img_bgr
+
         except Exception as e:
             self.get_logger().error(f"Failed to convert image: {e}")
+            return None
 
-    def detect_apples(self):
+    def detect_apples(self, image, depth_ros_msg):
         with self.cv_lock:
             local_clicked = list(self.clicked_locations)
             self.clicked_locations.clear()
 
-        iter_results = self.apple_model(self.latest_image_raw, verbose=False)
+        iter_results = self.apple_model(image, verbose=False)
         if len(iter_results) == 0:
             return
 
@@ -184,8 +214,13 @@ class CameraDriver(Node):
                     # self.get_logger().info(
                     #     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
                     # )
-
-                    newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0])
+                    t_base_cam = self.tf_buffer.lookup_transform(
+                        "base_link",
+                        depth_ros_msg.header.frame_id,
+                        depth_ros_msg.header.stamp
+                    )
+                    newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
+                        self.convert_image(depth_ros_msg), t_base_cam)
                     append = True
                     for cons in self.selected_results:
                         if consensusEqual(cons, newCons):
@@ -197,11 +232,29 @@ class CameraDriver(Node):
             return
         
 
-    def detect_qr(self):
-        detections = self.qr_model.detect(self.latest_image_raw, False)
+    def detect_qr(self, image, depth_ros_msg):
+        detections = self.qr_model.detect(image, False)
         if len(detections) != 0:
+            best = max(detections, key=lambda d: d["confidence"])
+            x1, y1, x2, y2 = map(int, np.round(best["bbox_xyxy"]))
+
+            padding = 40  # pixels
+
+            height, width = image.shape[:2]
+
+            x1 = max(0, x1 - padding)
+            y1 = max(0, y1 - padding)
+            x2 = min(width - 1, x2 + padding)
+            y2 = min(height - 1, y2 + padding)
+            t_base_cam = self.tf_buffer.lookup_transform(
+                depth_ros_msg.header.frame_id,
+                "base_link",
+                depth_ros_msg.header.stamp
+            )
+            newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0], 
+                self.convert_image(depth_ros_msg), t_base_cam)
             with self.results_lock:
-                self.results_qr = detections
+                self.results_qr = newCons
 
     def handle_click(self, u, v):
         with self.cv_lock:
@@ -263,29 +316,15 @@ class CameraDriver(Node):
                 self.mode = PerceptionMode.APPLE
                 return result
             with self.results_lock:
-                if self.mode == PerceptionMode.APPLE and self.results is not None:
+                if self.mode == PerceptionMode.APPLE and self.results is not None and self.cx is not None:
                     local_results = list(self.selected_results)
                     self.selected_results.clear()
                     break
-                if self.mode == PerceptionMode.QR and self.results_qr is not None:
-                    local_results = list()
-                    best = max(self.results_qr, key=lambda d: d["confidence"])
-                    x1, y1, x2, y2 = map(int, np.round(best["bbox_xyxy"]))
-
-                    padding = 40  # pixels
-
-                    height, width = self.latest_image_raw.shape[:2]
-
-                    x1 = max(0, x1 - padding)
-                    y1 = max(0, y1 - padding)
-                    x2 = min(width - 1, x2 + padding)
-                    y2 = min(height - 1, y2 + padding)
-
-                    local_results.append(ConsensusStruct(x1, y1, x2, y2, best["confidence"]))
+                if self.mode == PerceptionMode.QR and self.results_qr is not None and self.cx is not None:
+                    local_results = list(self.results_qr)
                     break
 
             rate.sleep()
-        self.mode = PerceptionMode.APPLE
         # Enable qr scanning and find consensus
         if len(local_results) == 0:
             goal_handle.abort()
@@ -295,59 +334,29 @@ class CameraDriver(Node):
                 self.results = None
                 self.reults_qr = None
             return result
-        pixel_locations = list()
-        for cons in local_results:
-            cons_message = CameraConsensus()
-            cons_message.header.stamp = self.get_clock().now().to_msg()
-            cons_message.header.frame_id = "arm1_cam_color_frame"  # or camera frame
-
-            # Pixel coordinates of pick
-            cons_message.u1 = int(cons.u1)
-            cons_message.v1 = int(cons.v1)
-            cons_message.u2 = int(cons.u2)
-            cons_message.v2 = int(cons.v2)
-
-            pixel_locations.append(cons_message)
+        world_locations = []
+        with self.mode_lock:
+            self.mode = PerceptionMode.APPLE
+        if goal.order == VisionScan.Goal.APPLE_SCAN:
+            for cons in local_results:
+                valid, pose = self.consToPoseEstimate(cons)
+                if valid:
+                    world_locations.append(pose)
+        else:
+            cons = local_results[0]
+            valid, pose = self.consToPoseEstimate(cons)
+            if valid:
+                world_locations.append(pose)
         
-        scan_request = CloudScan.Request()
-        scan_request.pixel_locations = pixel_locations
-        scan_request.size = len(local_results)
-        
-        future = self.camera_consensus_client.call_async(scan_request)
-        future.add_done_callback(self.service_callback)
-
-        with self.service_lock:
-            self.service_result = None
-            while rclpy.ok():
-                # cancellation support
-                if goal_handle.is_cancel_requested:
-                    goal_handle.canceled()
-                    result = VisionScan.Result()
-                    result.status = "Canceled"
-                    with self.results_lock:
-                        self.results = None
-                        self.reults_qr = None
-                    return result
-
-                # check completion
-                if self.service_result is not None:
-                    break
-
-                rate.sleep()
-
-            scan_result = self.service_result
-            self.service_result = None
-
-        if not scan_result.success:
+        if len(world_locations) == 0:
             goal_handle.abort()
             result = VisionScan.Result()
-            result.status = "PointCloud scan failure"
+            result.status = "Cloud Scan failure!"
             with self.results_lock:
                 self.results = None
                 self.reults_qr = None
             return result
 
-        world_locations = scan_result.world_locations
         feedback_msg = VisionScan.Feedback()
         feedback_msg.success = True
         if goal.order == VisionScan.Goal.APPLE_SCAN:
@@ -358,14 +367,55 @@ class CameraDriver(Node):
 
         goal_handle.succeed()
         result = VisionScan.Result()
+        result.status = "Success"
 
         self.get_logger().info(f'Goal succeeded!')
         return result
 
 
-    def service_callback(self, future):
-        try:
-            self.service_result = future.result()
-        except Exception as e:
-            self.get_logger().error(str(e))
-            self.service_result = None
+    def consToPoseEstimate(self, cons: ConsensusStruct):
+        if self.cx == None:
+            return False, None
+        x1 = int(min(cons.u1, cons.u2))
+        y1 = int(min(cons.v1, cons.v2))
+        x2 = int(max(cons.u1, cons.u2))
+        y2 = int(max(cons.v1, cons.v2))
+        roi = cons.depth_field[y1:y2, x1:x2]
+        valid = np.isfinite(roi) & (roi > 10) & (roi < 65535) #Remove NaN and <10mm
+
+        if np.count_nonzero(valid) == 0:
+            return False, None
+
+        z = roi[valid] / 1000.0
+        
+        v_coords, u_coords = np.indices(roi.shape)
+
+        u = u_coords[valid] + x1
+        v = v_coords[valid] + y1
+
+        x = (u - self.cx) * z / self.fx
+        y = (v - self.cy) * z / self.fy
+        
+        points = np.vstack((x, y, z)).T
+        centroid = np.mean(points, axis=0)
+
+        centroid_pose = Pose()
+
+        centroid_pose.position.x = centroid[0]
+        centroid_pose.position.y = centroid[1]
+        centroid_pose.position.z = centroid[2]
+
+        transformedPose = tf2_geometry_msgs.do_transform_pose(centroid_pose, cons.tf)
+
+        print(f'{transformedPose.position.x} {transformedPose.position.y} {transformedPose.position.z}')
+
+        pose = PoseStamped()
+        pose.pose = transformedPose
+        
+        pose.pose.orientation.x = 0.5
+        pose.pose.orientation.y = -0.5
+        pose.pose.orientation.z = 0.5
+        pose.pose.orientation.w = -0.5
+        pose.header.frame_id = "base_link"
+
+        return True, pose
