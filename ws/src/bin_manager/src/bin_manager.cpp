@@ -17,7 +17,7 @@ public:
     BinManager() : Node("bin_manager") {
         // ROS2 Parameters
         this->declare_parameter<std::vector<double>>(
-            "bin_pose_init", std::vector<double>{-0.1, 0.1, 0.0});
+            "bin_pose_init", std::vector<double>{-0.15, 0.15, 0.0});
         bin_pose = this->get_parameter("bin_pose_init").as_double_array();
         this->declare_parameter<std::string>(
             "bin_collision_model", std::string("package://robot_model/meshes/bin_assembly.stl"));

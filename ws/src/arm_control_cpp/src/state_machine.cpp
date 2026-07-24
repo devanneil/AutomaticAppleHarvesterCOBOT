@@ -276,15 +276,52 @@ RobotCommand StateMachine::handleQRSearch(RobotContext& ctx)
 RobotCommand StateMachine::handleChute(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Chute) throw std::runtime_error("Improper state!");
-    RobotCommand tempCommand;
-    tempCommand.type = CommandType::None;
-    tempCommand.requested_state = RobotState::Monitor;
-    return tempCommand;
+    if (ctx.step == 0) {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = getPoseForState(ctx);
+        nextCommand.pose.pose.position.z += 0.05;
+        nextCommand.requested_state = RobotState::Chute;
+        ctx.step = 1;
+        return nextCommand;
+    }
+    if (ctx.step == 1) {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = getPoseForState(ctx);
+        nextCommand.requested_state = RobotState::Chute;
+        ctx.step = 2;
+        return nextCommand;
+    }
+    if (ctx.step == 2) {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::StopSuction;
+        nextCommand.requested_state = RobotState::ChuteRetreat;
+        ctx.step = 0;
+        return nextCommand;
+    }
+    RobotCommand nextCommand;
+    nextCommand.type = CommandType::None;
+    nextCommand.requested_state = RobotState::Chute;
+    return nextCommand;
 }
 
 RobotCommand StateMachine::handleChuteRetreat(RobotContext& ctx)
 {
     if (ctx.state != RobotState::ChuteRetreat) throw std::runtime_error("Improper state!");
+    if (ctx.step == 0) {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = getPoseForState(ctx);
+        nextCommand.pose.pose.position.z += 0.05;
+        nextCommand.requested_state = RobotState::ChuteRetreat;
+        ctx.step = 1;
+        return nextCommand;
+    }
+    RobotCommand nextCommand;
+    nextCommand.type = CommandType::None;
+    nextCommand.requested_state = RobotState::Monitor;
+    return nextCommand;
 }
 
 RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)

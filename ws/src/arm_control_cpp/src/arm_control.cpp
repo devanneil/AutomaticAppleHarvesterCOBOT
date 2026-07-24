@@ -81,8 +81,8 @@ void ArmController::initializeMoveIt()
     // {
     //     rclcpp::sleep_for(std::chrono::milliseconds(100));
     // }
-    // // auto pose = create_pose(0.0, 0.025, 0.2, -2.754, 0.5, 0, "QR_Code_1");
-    // // moveToPose(pose, true, "suction_link");
+    // auto pose = create_pose(0.01, 0.01, 0.05, -2.0, 0.0, 0, "Chute_SE");
+    // moveToPose(pose, true, "suction_link");
     // throw std::runtime_error("testing");
 }
 
@@ -345,10 +345,10 @@ void ArmController::triggerVacuum() {
     req->relay_id = relay_num;
     req->state = true;
     suction_client_->async_send_request(req);
-    {
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        context_.suction_state = true;
-    }  
+    // {
+    //     std::lock_guard<std::mutex> lock(context_mutex_);
+    //     context_.suction_state = true;
+    // }  
     suction_running_ = true;
     last_suction_ = std::chrono::steady_clock::now();
 }
