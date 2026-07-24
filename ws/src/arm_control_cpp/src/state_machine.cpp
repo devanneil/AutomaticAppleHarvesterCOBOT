@@ -33,6 +33,9 @@ RobotCommand StateMachine::update(RobotContext& ctx)
         case RobotState::QRSearch:
             nextCommand = handleQRSearch(ctx);
             break;
+        case RobotState::ChutePrepare:
+            nextCommand = handleChutePrepare(ctx);
+            break;
         case RobotState::Chute:
             nextCommand = handleChute(ctx);
             break;
@@ -105,6 +108,13 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = getPoseForState(ctx);
         nextCommand.requested_state = RobotState::HeatScan;
+        return nextCommand;
+    }
+    if (ctx.suction_state)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::ChutePrepare;
         return nextCommand;
     }
 }
@@ -194,18 +204,11 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
         ctx.step = 1;
         return nextCommand;
     }
-    if (ctx.step == 1 && timeout_elapsed(ctx.last_qr_scan, std::chrono::minutes(3)))
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::QRScan;
-        nextCommand.requested_state = RobotState::QRScan;
-        ctx.step = 0;
-        return nextCommand;
-    } else if (ctx.step == 1)
+    if (ctx.step == 1) 
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::Chute;
+        nextCommand.requested_state = RobotState::ChutePrepare;
         ctx.step = 0;
         return nextCommand;
     }
@@ -273,6 +276,23 @@ RobotCommand StateMachine::handleQRSearch(RobotContext& ctx)
     return nextCommand;
 }
 
+RobotCommand StateMachine::handleChutePrepare(RobotContext &ctx)
+{
+    if (ctx.state != RobotState::ChutePrepare) throw std::runtime_error("Improper state!");
+    if (timeout_elapsed(ctx.last_qr_scan, std::chrono::minutes(3)))
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::QRScan;
+        nextCommand.requested_state = RobotState::QRScan;
+        return nextCommand;
+    } else
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Chute;
+        return nextCommand;
+    }
+}
 RobotCommand StateMachine::handleChute(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Chute) throw std::runtime_error("Improper state!");

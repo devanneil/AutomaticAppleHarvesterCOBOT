@@ -36,6 +36,7 @@ private:
     RobotCommand handleRetreat(RobotContext& ctx);
     RobotCommand handleQRScan(RobotContext& ctx);
     RobotCommand handleQRSearch(RobotContext& ctx);
+    RobotCommand handleChutePrepare(RobotContext& ctx);
     RobotCommand handleChute(RobotContext& ctx);
     RobotCommand handleChuteRetreat(RobotContext& ctx);
     RobotCommand handleHeatScan(RobotContext& ctx);

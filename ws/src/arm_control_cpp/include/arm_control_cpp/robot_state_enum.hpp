@@ -13,6 +13,7 @@ enum class RobotState
     Retreat, // Move away from apple pose
     QRScan, // Quick QR scan
     QRSearch, // Deep QR scan
+    ChutePrepare, // Non movement prechute step, decide to QR scan or not
     Chute, // Chute frame origin
     ChuteRetreat, // Safely return from chute
     HeatScan, // Same pose as, plan heat search
