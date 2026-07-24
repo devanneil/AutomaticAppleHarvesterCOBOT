@@ -366,11 +366,12 @@ rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedFuture ArmControlle
         std::lock_guard<std::mutex> ctx_lock(context_mutex_);
         context_.suction_state = false;
     }
+    suction_running_ = false;
     return future;
 }
 void ArmController::monitorVacuum() {
     if(suction_running_) {
-        if (std::chrono::steady_clock::now() - last_suction_ > suction_timeout_) {
+        if (timeout_elapsed(last_suction_, suction_timeout_)) {
             suction_running_ = false;
             disableVacuum();
             return;

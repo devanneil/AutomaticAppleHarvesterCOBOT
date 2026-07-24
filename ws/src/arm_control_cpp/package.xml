@@ -7,6 +7,8 @@
   <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
   <license>TODO: License declaration</license>
 
+  <depend>apple_interfaces</depend>
+
   <depend>rclcpp</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>moveit_core</depend>

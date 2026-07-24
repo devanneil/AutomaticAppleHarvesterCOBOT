@@ -52,8 +52,8 @@ ament_target_dependencies(utils
   tf2_geometry_msgs
   tf2
 )
-add_executable(arm_control
-    src/main.cpp
+
+add_library(arm_control
     src/arm_control.cpp
 )
 
@@ -61,10 +61,12 @@ target_link_libraries(arm_control
     state_machine
     utils
 )
+
 target_include_directories(arm_control PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
+
 ament_target_dependencies(arm_control 
   rclcpp
   moveit_ros_planning_interface
@@ -79,6 +81,57 @@ ament_target_dependencies(arm_control
   tf2
   tf2_ros
 )
+
+add_executable(arm_control_cpp
+    src/main.cpp
+)
+
+target_link_libraries(arm_control_cpp
+    arm_control
+    state_machine
+    utils
+)
+
+
+function(add_robot_test TARGET SOURCE)
+
+    add_executable(${TARGET}
+        tests/${SOURCE}.cpp
+    )
+
+    target_link_libraries(${TARGET}
+        arm_control
+        state_machine
+        utils
+    )
+
+    install(TARGETS
+        ${TARGET}
+        DESTINATION lib/${PROJECT_NAME}
+    )
+
+endfunction()
+
+add_robot_test(
+    suction_test
+    test_suction
+)
+
+add_robot_test(
+    qr_scan_test
+    test_qr_scan
+)
+
+add_robot_test(
+    pick_test
+    test_pick
+)
+
+add_robot_test(
+    vision_scan_test
+    test_vision_scan
+)
+
 install(TARGETS
   arm_control
   DESTINATION lib/${PROJECT_NAME})

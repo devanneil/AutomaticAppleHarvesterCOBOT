@@ -22,8 +22,11 @@
 #include "utils.hpp"
 #include "state_machine.hpp"
 
+class TestArmController;
+
 class ArmController : public rclcpp::Node
 {
+    friend class TestArmController;
 public:
     ArmController();
     ~ArmController();
@@ -115,7 +118,7 @@ private:
     bool suction_running_;
     rclcpp::TimerBase::SharedPtr vacuum_timer_;
     std::chrono::steady_clock::time_point last_suction_;
-    std::chrono::steady_clock::duration suction_timeout_ = std::chrono::milliseconds(5000);
+    std::chrono::steady_clock::duration suction_timeout_ = std::chrono::seconds(5);
     RobotContext context_;
     StateMachine state_machine_;
     
