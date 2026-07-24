@@ -84,7 +84,7 @@ private:
         obj.operation = obj.ADD;
         
         moveit_msgs::msg::AttachedCollisionObject attached_object;
-        attached_object.link_name = "Apple_Bin_4222026_1";
+        attached_object.link_name = "dummy_link";
         attached_object.object = obj;
 
         moveit_msgs::msg::PlanningScene planning_scene;

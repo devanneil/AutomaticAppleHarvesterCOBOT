@@ -1,736 +1,83 @@
 <?xml version="1.0" ?>
 <robot name="bin_filler">
-
   <link name="dummy_link"/>
+  <link name="Bin_Link">
+    <visual name="Bin_Link_visual">
+      <origin xyz="0.5969 -0.5969 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://robot_model/meshes/bin_assembly.stl"/>
+      </geometry>
+      <material name="Bin-material">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+    <collision name="Bin_Link_collision">
+      <origin xyz="0.5969 -0.5969 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://robot_model/meshes/bin_assembly.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="QR_SE"/>
+  <!-- <link name="QR_NE"/>
+  <link name="QR_NW"/>
+  <link name="QR_SW"/> -->
+  <link name="Chute_SE"/>
+  <link name="Chute_NE"/>
+  <link name="Chute_NW"/>
+  <link name="Chute_SW"/>
 
   <joint name="dummy_joint" type="fixed">
-      <origin xyz="-0.7798 1.882 0.0128" rpy="0.000 0.000 0"/>
-      <parent link="dummy_link"/>
-      <child link="Top_Frame_2"/>
+    <origin xyz="-0.5969 0.5969 0.0" rpy="0.0 0.0 0.0"/>
+    <parent link="dummy_link"/>
+    <child link="Bin_Link"/>
   </joint>
 
-  <link name="Top_Frame_2">
-    <visual name="Top_Frame_2_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_2.stl"/>
-      </geometry>
-      <material name="Top_Frame_2-material">
-        <color rgba="1 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Top_Frame_2_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_2.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.4065 -1.2705987 1.0737944" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Top_Frame_1">
-    <visual name="Top_Frame_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_1.stl"/>
-      </geometry>
-      <material name="Top_Frame_1-material">
-        <color rgba="1 0 1 1"/>
-      </material>
-    </visual>
-    <collision name="Top_Frame_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.813 -0.02 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Top_Frame_4">
-    <visual name="Top_Frame_4_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_4.stl"/>
-      </geometry>
-      <material name="Top_Frame_4-material">
-        <color rgba="1 1 0 1"/>
-      </material>
-    </visual>
-    <collision name="Top_Frame_4_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_4.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0.813 -0.02 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Apple_Chute_Entrance_4242026_2">
-    <visual name="Apple_Chute_Entrance_4242026_2_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_2.stl"/>
-      </geometry>
-      <material name="Apple_Chute_Entrance_4242026_2-material">
-        <color rgba="1 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Apple_Chute_Entrance_4242026_2_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_2.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.003175 -0.0762 0.073025" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Angle_Bracket_2">
-    <visual name="Angle_Bracket_2_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_2.stl"/>
-      </geometry>
-      <material name="Angle_Bracket_2-material">
-        <color rgba="0 1 0 1"/>
-      </material>
-    </visual>
-    <collision name="Angle_Bracket_2_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_2.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.04 -0.31419456 0.31323202" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Top_Frame_3">
-    <visual name="Top_Frame_3_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_3.stl"/>
-      </geometry>
-      <material name="Top_Frame_3-material">
-        <color rgba="1 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Top_Frame_3_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Top_Frame_3.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0.02 0 0.02" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Apple_Chute_Entrance_4242026_1">
-    <visual name="Apple_Chute_Entrance_4242026_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_1.stl"/>
-      </geometry>
-      <material name="Apple_Chute_Entrance_4242026_1-material">
-        <color rgba="1 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Apple_Chute_Entrance_4242026_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.003175 -0.0762 0.073025" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Angle_Bracket_3">
-    <visual name="Angle_Bracket_3_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_3.stl"/>
-      </geometry>
-      <material name="Angle_Bracket_3-material">
-        <color rgba="0 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Angle_Bracket_3_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_3.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0.33226948 0.4465 0.31419456" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Apple_Chute_Entrance_4242026_4">
-    <visual name="Apple_Chute_Entrance_4242026_4_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_4.stl"/>
-      </geometry>
-      <material name="Apple_Chute_Entrance_4242026_4-material">
-        <color rgba="0 1 0 1"/>
-      </material>
-    </visual>
-    <collision name="Apple_Chute_Entrance_4242026_4_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_4.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.003175 -0.0762 0.073025" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Angle_Bracket_4">
-    <visual name="Angle_Bracket_4_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_4.stl"/>
-      </geometry>
-      <material name="Angle_Bracket_4-material">
-        <color rgba="0 0 1 1"/>
-      </material>
-    </visual>
-    <collision name="Angle_Bracket_4_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_4.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.04 -0.31419456 0.31323202" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Rubber_Chute_Entrance_Bumper_54206_4">
-    <visual name="Rubber_Chute_Entrance_Bumper_54206_4_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_4.stl"/>
-      </geometry>
-      <material name="Rubber_Chute_Entrance_Bumper_54206_4-material">
-        <color rgba="1 0 1 1"/>
-      </material>
-    </visual>
-    <collision name="Rubber_Chute_Entrance_Bumper_54206_4_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_4.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Apple_Chute_Entrance_4242026_3">
-    <visual name="Apple_Chute_Entrance_4242026_3_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_3.stl"/>
-      </geometry>
-      <material name="Apple_Chute_Entrance_4242026_3-material">
-        <color rgba="1 0.5 0 1"/>
-      </material>
-    </visual>
-    <collision name="Apple_Chute_Entrance_4242026_3_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Chute_Entrance_4242026_3.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.003175 -0.0762 0.073025" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Angle_Bracket_1">
-    <visual name="Angle_Bracket_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_1.stl"/>
-      </geometry>
-      <material name="Angle_Bracket_1-material">
-        <color rgba="0 0 1 1"/>
-      </material>
-    </visual>
-    <collision name="Angle_Bracket_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Angle_Bracket_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.04 -0.31419456 0.31323202" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Rubber_Chute_Entrance_Bumper_54206_3">
-    <visual name="Rubber_Chute_Entrance_Bumper_54206_3_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_3.stl"/>
-      </geometry>
-      <material name="Rubber_Chute_Entrance_Bumper_54206_3-material">
-        <color rgba="1 0 1 1"/>
-      </material>
-    </visual>
-    <collision name="Rubber_Chute_Entrance_Bumper_54206_3_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_3.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1">
-    <visual name="8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1.stl"/>
-      </geometry>
-      <material name="8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1-material">
-        <color rgba="0 0 0 1"/>
-      </material>
-    </visual>
-    <collision name="8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0.01905 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Rubber_Chute_Entrance_Bumper_54206_2">
-    <visual name="Rubber_Chute_Entrance_Bumper_54206_2_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_2.stl"/>
-      </geometry>
-      <material name="Rubber_Chute_Entrance_Bumper_54206_2-material">
-        <color rgba="1 0 1 1"/>
-      </material>
-    </visual>
-    <collision name="Rubber_Chute_Entrance_Bumper_54206_2_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_2.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Corner_8020_Series_15_Bracket_4222026_2">
-    <visual name="Corner_8020_Series_15_Bracket_4222026_2_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_2.stl"/>
-      </geometry>
-      <material name="Corner_8020_Series_15_Bracket_4222026_2-material">
-        <color rgba="1 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Corner_8020_Series_15_Bracket_4222026_2_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_2.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0.0166624 -0.066926328 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Rubber_Chute_Entrance_Bumper_54206_1">
-    <visual name="Rubber_Chute_Entrance_Bumper_54206_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_1.stl"/>
-      </geometry>
-      <material name="Rubber_Chute_Entrance_Bumper_54206_1-material">
-        <color rgba="1 0 0 1"/>
-      </material>
-    </visual>
-    <collision name="Rubber_Chute_Entrance_Bumper_54206_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Rubber_Chute_Entrance_Bumper_54206_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="QR_Code_1">
-    <visual name="QR_Code_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/QR_Code_1.stl"/>
-      </geometry>
-      <material name="QR_Code_1-material">
-        <color rgba="1 0 0.5 1"/>
-      </material>
-    </visual>
-    <collision name="QR_Code_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/QR_Code_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 -0.001" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Bottom_Frame_3">
-    <visual name="Bottom_Frame_3_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_3.stl"/>
-      </geometry>
-      <material name="Bottom_Frame_3-material">
-        <color rgba="1 0.5 0 1"/>
-      </material>
-    </visual>
-    <collision name="Bottom_Frame_3_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_3.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.02 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Bottom_Frame_2">
-    <visual name="Bottom_Frame_2_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_2.stl"/>
-      </geometry>
-      <material name="Bottom_Frame_2-material">
-        <color rgba="1 0.5 0 1"/>
-      </material>
-    </visual>
-    <collision name="Bottom_Frame_2_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_2.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0.02 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Bottom_Frame_4">
-    <visual name="Bottom_Frame_4_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_4.stl"/>
-      </geometry>
-      <material name="Bottom_Frame_4-material">
-        <color rgba="1 1 0 1"/>
-      </material>
-    </visual>
-    <collision name="Bottom_Frame_4_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_4.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="1.1538 -0.02 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Bottom_Frame_1">
-    <visual name="Bottom_Frame_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_1.stl"/>
-      </geometry>
-      <material name="Bottom_Frame_1-material">
-        <color rgba="1 0.5 0 1"/>
-      </material>
-    </visual>
-    <collision name="Bottom_Frame_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Bottom_Frame_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0.02 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Corner_8020_Series_15_Bracket_4222026_4">
-    <visual name="Corner_8020_Series_15_Bracket_4222026_4_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_4.stl"/>
-      </geometry>
-      <material name="Corner_8020_Series_15_Bracket_4222026_4-material">
-        <color rgba="1 0 0 1"/>
-      </material>
-    </visual>
-    <collision name="Corner_8020_Series_15_Bracket_4222026_4_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_4.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Corner_8020_Series_15_Bracket_4222026_1">
-    <visual name="Corner_8020_Series_15_Bracket_4222026_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_1.stl"/>
-      </geometry>
-      <material name="Corner_8020_Series_15_Bracket_4222026_1-material">
-        <color rgba="1 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Corner_8020_Series_15_Bracket_4222026_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Apple_Bin_4222026_1">
-    <visual name="Apple_Bin_4222026_1_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Bin_4222026_1.stl"/>
-      </geometry>
-      <material name="Apple_Bin_4222026_1-material">
-        <color rgba="1 1 1 1"/>
-      </material>
-    </visual>
-    <collision name="Apple_Bin_4222026_1_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Apple_Bin_4222026_1.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="-0.5969 0.5969 -0.7112" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <link name="Corner_8020_Series_15_Bracket_4222026_3">
-    <visual name="Corner_8020_Series_15_Bracket_4222026_3_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_3.stl"/>
-      </geometry>
-      <material name="Corner_8020_Series_15_Bracket_4222026_3-material">
-        <color rgba="1 0.5 0 1"/>
-      </material>
-    </visual>
-    <collision name="Corner_8020_Series_15_Bracket_4222026_3_collision">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/bin_filler/Corner_8020_Series_15_Bracket_4222026_3.stl"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0"/>
-      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </inertial>
-  </link>
-  <joint name="Fastened_11" type="fixed">
-    <origin xyz="0.15423568 -1.8596187 1.0737944" rpy="-3.1415927 0 -2.3561945"/>
-    <parent link="Top_Frame_2"/>
-    <child link="Top_Frame_1"/>
+  <joint name="QR_SE_Joint" type="fixed">
+    <origin xyz="0.302 -0.302 1.129" rpy="0.785 0.000 0.785"/>
+    <parent link="Bin_Link"/>
+    <child link="QR_SE"/>
   </joint>
-  <joint name="Fastened_12" type="fixed">
-    <origin xyz="-0.39235786 -1.2564566 1.0737944" rpy="0 0 0.78539816"/>
-    <parent link="Top_Frame_2"/>
-    <child link="Top_Frame_4"/>
+
+  <joint name="Chute_SE_Joint" type="fixed">
+    <origin xyz="0.159 -0.552 1.107" rpy="0 0 0.785"/>
+    <parent link="Bin_Link"/>
+    <child link="Chute_SE"/>
   </joint>
-  <joint name="Fastened_20" type="fixed">
-    <origin xyz="-0.3667606 -1.3386224 1.0937944" rpy="1.5707963 0 0.78539816"/>
-    <parent link="Top_Frame_2"/>
-    <child link="Apple_Chute_Entrance_4242026_2"/>
+
+  <!-- <joint name="QR_NE_Joint" type="fixed">
+    <origin xyz="0.302 0.302 1.129" rpy="0.785 0 2.356"/>
+    <parent link="Bin_Link"/>
+    <child link="QR_NE"/>
+  </joint> -->
+
+  <joint name="Chute_NE_Joint" type="fixed">
+    <origin xyz="0.552 0.159 1.107" rpy="0 0 2.356"/>
+    <parent link="Bin_Link"/>
+    <child link="Chute_NE"/>
   </joint>
-  <joint name="Fastened_13" type="fixed">
-    <origin xyz="-0.13320323 -1.5721798 1.0737944" rpy="3.1415927 0 2.3561945"/>
-    <parent link="Top_Frame_2"/>
-    <child link="Angle_Bracket_2"/>
+
+  <!-- <joint name="QR_NW_Joint" type="fixed">
+    <origin xyz="-0.302 0.302 1.129" rpy="0.785 0.000 -2.356"/>
+    <parent link="Bin_Link"/>
+    <child link="QR_NW"/>
+  </joint> -->
+
+  <joint name="Chute_NW_Joint" type="fixed">
+    <origin xyz="-0.159 0.552 1.107" rpy="0 0 -2.356"/>
+    <parent link="Bin_Link"/>
+    <child link="Chute_NW"/>
   </joint>
-  <joint name="Fastened_10" type="fixed">
-    <origin xyz="-0.813 -0.04 -0.02" rpy="0 0 3.1415927"/>
-    <parent link="Top_Frame_1"/>
-    <child link="Top_Frame_3"/>
-  </joint>
-  <joint name="Fastened_18" type="fixed">
-    <origin xyz="-0.0762 -0.04 -0.02" rpy="-1.5707963 0 1.5707963"/>
-    <parent link="Top_Frame_1"/>
-    <child link="Apple_Chute_Entrance_4242026_1"/>
-  </joint>
-  <joint name="Fastened_6" type="fixed">
-    <origin xyz="0 -0.04 -0.02" rpy="1.5707963 -1.5707963 0"/>
-    <parent link="Top_Frame_1"/>
-    <child link="Angle_Bracket_3"/>
-  </joint>
-  <joint name="Fastened_14" type="fixed">
-    <origin xyz="0.7368 0 0.02" rpy="1.5707963 0 -1.5707963"/>
-    <parent link="Top_Frame_4"/>
-    <child link="Apple_Chute_Entrance_4242026_4"/>
-  </joint>
-  <joint name="Fastened_23" type="fixed">
-    <origin xyz="0.4065 0 0" rpy="3.1415927 0 0"/>
-    <parent link="Top_Frame_4"/>
-    <child link="Angle_Bracket_4"/>
-  </joint>
-  <joint name="Fastened_21" type="fixed">
-    <origin xyz="-0.0762 0 0.073025" rpy="-1.5707963 0 0"/>
-    <parent link="Apple_Chute_Entrance_4242026_2"/>
-    <child link="Rubber_Chute_Entrance_Bumper_54206_4"/>
-  </joint>
-  <joint name="Fastened_16" type="fixed">
-    <origin xyz="0.04 -0.0762 0" rpy="-1.5707963 0 -3.1415927"/>
-    <parent link="Top_Frame_3"/>
-    <child link="Apple_Chute_Entrance_4242026_3"/>
-  </joint>
-  <joint name="Fastened_24" type="fixed">
-    <origin xyz="0.04 -0.4065 0.02" rpy="0 0 1.5707963"/>
-    <parent link="Top_Frame_3"/>
-    <child link="Angle_Bracket_1"/>
-  </joint>
-  <joint name="Fastened_19" type="fixed">
-    <origin xyz="-0.0762 0 0.073025" rpy="1.5707963 1.5707963 0"/>
-    <parent link="Apple_Chute_Entrance_4242026_1"/>
-    <child link="Rubber_Chute_Entrance_Bumper_54206_3"/>
-  </joint>
-  <joint name="Fastened_22" type="fixed">
-    <origin xyz="0 0.4265 0.01849363" rpy="-1.5707963 1.5707963 0"/>
-    <parent link="Angle_Bracket_3"/>
-    <child link="8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1"/>
-  </joint>
-  <joint name="Fastened_15" type="fixed">
-    <origin xyz="-0.0762 0 0.073025" rpy="-1.5707963 0 0"/>
-    <parent link="Apple_Chute_Entrance_4242026_4"/>
-    <child link="Rubber_Chute_Entrance_Bumper_54206_2"/>
-  </joint>
-  <joint name="Fastened_26" type="fixed">
-    <origin xyz="-0.02 -0.29419456 0.31323202" rpy="0 -1.5707963 0"/>
-    <parent link="Angle_Bracket_4"/>
-    <child link="Corner_8020_Series_15_Bracket_4222026_2"/>
-      </joint>
-  <joint name="Fastened_17" type="fixed">
-    <origin xyz="-0.0762 0 0.073025" rpy="-1.5707963 0 -3.1415927"/>
-    <parent link="Apple_Chute_Entrance_4242026_3"/>
-    <child link="Rubber_Chute_Entrance_Bumper_54206_1"/>
-  </joint>
-  <joint name="Fastened_27" type="fixed">
-    <origin xyz="0.0176911 0.02203992 0" rpy="-0.78539816 -1.5707963 0"/>
-    <parent link="8020-15_Angled_Short_End_Cap_w_QR_Flag_6152026_1"/>
-    <child link="QR_Code_1"/>
-  </joint>
-  <joint name="Fastened_8" type="fixed">
-    <origin xyz="0.0166624 -0.066926328 0" rpy="-1.5707963 -0.78539816 1.5707963"/>
-    <parent link="Corner_8020_Series_15_Bracket_4222026_2"/>
-<child link="Bottom_Frame_3"/>
-  </joint>
-  <joint name="Fastened_4" type="fixed">
-    <origin xyz="0 1.1538 0" rpy="0 0 3.1415927"/>
-    <parent link="Bottom_Frame_3"/>
-    <child link="Bottom_Frame_2"/>
-  </joint>
-  <joint name="Fastened_5" type="fixed">
-    <origin xyz="-0.04 0 0" rpy="0 0 0"/>
-    <parent link="Bottom_Frame_3"/>
-    <child link="Bottom_Frame_4"/>
-  </joint>
-  <joint name="Fastened_3" type="fixed">
-    <origin xyz="-1.1538 0.04 0" rpy="0 0 -1.5707963"/>
-    <parent link="Bottom_Frame_2"/>
-    <child link="Bottom_Frame_1"/>
-  </joint>
-  <joint name="Fastened_7" type="fixed">
-    <origin xyz="0 0.04 0" rpy="0 0 1.5707963"/>
-    <parent link="Bottom_Frame_2"/>
-    <child link="Corner_8020_Series_15_Bracket_4222026_4"/>
-  </joint>
-  <joint name="Fastened_9" type="fixed">
-    <origin xyz="1.1538 0 0" rpy="0 0 1.5707963"/>
-    <parent link="Bottom_Frame_4"/>
-    <child link="Corner_8020_Series_15_Bracket_4222026_1"/>
-  </joint>
-  <joint name="Fastened_2" type="fixed">
-    <origin xyz="-1.1538 0 -0.02" rpy="0 0 -1.5707963"/>
-    <parent link="Bottom_Frame_1"/>
-    <child link="Apple_Bin_4222026_1"/>
-      </joint>
-  <joint name="Fastened_25" type="fixed">
-    <origin xyz="0 0.04 0" rpy="0 0 1.5707963"/>
-    <parent link="Bottom_Frame_1"/>
-    <child link="Corner_8020_Series_15_Bracket_4222026_3"/>
+
+  <!-- <joint name="QR_SW_Joint" type="fixed">
+    <origin xyz="-0.302 -0.302 1.129" rpy="0.785 0.000 -0.785"/>
+    <parent link="Bin_Link"/>
+    <child link="QR_SW"/>
+  </joint> -->
+
+  <joint name="Chute_SW_Joint" type="fixed">
+    <origin xyz="-0.552 -0.159 1.107" rpy="0 0 -0.785"/>
+    <parent link="Bin_Link"/>
+    <child link="Chute_SW"/>
   </joint>
 </robot>
