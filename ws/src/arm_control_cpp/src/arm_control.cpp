@@ -395,7 +395,10 @@ bool ArmController::createVisionScan(uint8_t scan_type)
         );
         return false;
     }
-
+    {
+        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+        context_.vision_scan_fail = false;
+    }  
     VisionScan::Goal goal_msg;
     goal_msg.order = scan_type;
 
@@ -473,10 +476,6 @@ void ArmController::feedback_callback(
         "Vision feedback success: %s",
         feedback->success ? "true" : "false"
     );
-    {
-        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
-        context_.vision_scan_fail = !feedback->success;
-    }
     if (last_goal_order_ == VisionScan::Goal::APPLE_SCAN)
     {
         for (const auto & apple : feedback->apples)
@@ -525,7 +524,7 @@ void ArmController::result_callback(
             // result_msg->apples
             // result_msg->qr_pose
 
-            break;
+            return;
         }
 
         case rclcpp_action::ResultCode::ABORTED:
@@ -549,6 +548,11 @@ void ArmController::result_callback(
             );
             break;
     }
+    // Any case apart from SUCCESS is fail
+    {
+        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+        context_.vision_scan_fail = true;
+    }
 }
 
 geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
@@ -570,7 +574,7 @@ void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
             tf2::TimePointZero);
     } catch (const tf2::TransformException & ex) {
         RCLCPP_INFO(
-            this->get_logger(), "Could not transform dummy_link to QR_Code_1: %s", ex.what());
+            this->get_logger(), "Could not transform dummy_link to QR_SE: %s", ex.what());
         return;
     }
     float x_dummy_qr = t_dummy_qr.transform.translation.x;
@@ -584,6 +588,23 @@ void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
     float x_dummy_base = x_qr_base - x_dummy_qr;
     float y_dummy_base = y_qr_base - y_dummy_qr;
     float z_dummy_base = z_qr_base - z_dummy_qr;
+
+    if(
+        x_dummy_base > 0
+        || y_dummy_base < 0
+        || (z_dummy_base < -0.1 || z_dummy_base > 0.1)
+    ) 
+    {
+        RCLCPP_ERROR(
+            this->get_logger(), "INVALID QR MOVE: %f %f %f", x_dummy_base, y_dummy_base, z_dummy_base
+        );
+        //Reject pose
+        {
+            std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+            context_.vision_scan_fail = true;
+        }     
+        return;
+    }
 
     auto req = std::make_shared<apple_interfaces::srv::UpdateBin::Request>();
     req->new_pose[0] = x_dummy_base;
