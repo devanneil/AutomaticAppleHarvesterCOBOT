@@ -193,7 +193,9 @@ def generate_launch_description():
                 "arm_num": LaunchConfiguration("arm_num"),
                 "server_host_1": LaunchConfiguration("robot_ip"),
                 "arm_domain": LaunchConfiguration("arm_domain")
-            }]
+            }],
+            respawn=True,
+            respawn_delay=1.0
         )
     )
 

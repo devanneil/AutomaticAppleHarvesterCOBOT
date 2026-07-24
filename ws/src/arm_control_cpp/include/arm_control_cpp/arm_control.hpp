@@ -41,17 +41,18 @@ private:
     void rvizJoyCallback(const sensor_msgs::msg::Joy::SharedPtr msg);
 
     bool moveToPose(const geometry_msgs::msg::PoseStamped& target, bool blocking, std::string end_effector);
+    void stopArm();
 
-    void executePlanService(
-        const std::shared_ptr<rmw_request_id_t> request_header,
-        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-        std::shared_ptr<std_srvs::srv::SetBool::Response> response
-    );
-    void moveToHome(
-        const std::shared_ptr<rmw_request_id_t> request_header,
-        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-        std::shared_ptr<std_srvs::srv::SetBool::Response> response
-    );
+    // void executePlanService(
+    //     const std::shared_ptr<rmw_request_id_t> request_header,
+    //     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+    //     std::shared_ptr<std_srvs::srv::SetBool::Response> response
+    // );
+    // void moveToHome(
+    //     const std::shared_ptr<rmw_request_id_t> request_header,
+    //     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+    //     std::shared_ptr<std_srvs::srv::SetBool::Response> response
+    // );
 
     bool isDuplicatePose(const geometry_msgs::msg::PoseStamped::SharedPtr& msg);
 

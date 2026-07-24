@@ -35,6 +35,7 @@ struct RobotContext
     bool suction_state; // true->has apple, false->no apple
     bool at_pose;
     bool vision_scan_fail;
+    bool move_command_fail;
 
     std::chrono::steady_clock::time_point last_state;
     std::chrono::steady_clock::time_point last_qr_scan;

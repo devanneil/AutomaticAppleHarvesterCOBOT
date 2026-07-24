@@ -52,7 +52,7 @@ ArmController::ArmController() : Node("arm_controller")
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 }
 ArmController::~ArmController() {
-
+    stopArm();
 }
 void ArmController::initializeMoveIt() 
 {
@@ -75,15 +75,15 @@ void ArmController::initializeMoveIt()
         "EEF link: %s",
         move_group_->getEndEffectorLink().c_str());
 
-    createQRScan();
-    auto start = std::chrono::steady_clock::now();
-    while(!timeout_elapsed(start, std::chrono::seconds(5)))
-    {
-        rclcpp::sleep_for(std::chrono::milliseconds(100));
-    }
-    // auto pose = create_pose(0.0, 0.025, 0.2, -2.754, 0.5, 0, "QR_Code_1");
-    // moveToPose(pose, true, "suction_link");
-    throw std::runtime_error("testing");
+    // createQRScan();
+    // auto start = std::chrono::steady_clock::now();
+    // while(!timeout_elapsed(start, std::chrono::seconds(5)))
+    // {
+    //     rclcpp::sleep_for(std::chrono::milliseconds(100));
+    // }
+    // // auto pose = create_pose(0.0, 0.025, 0.2, -2.754, 0.5, 0, "QR_Code_1");
+    // // moveToPose(pose, true, "suction_link");
+    // throw std::runtime_error("testing");
 }
 
 // void ArmController::appleCallback(
@@ -175,13 +175,6 @@ bool ArmController::moveToPose(
     {
         RCLCPP_WARN(get_logger(), "Planning failed.");
 
-        move_group_->stop();
-        
-        rclcpp::sleep_for(std::chrono::milliseconds(250));
-
-        move_group_->clearPoseTargets();
-        move_group_->setStartStateToCurrentState();
-
         return false;
     }
 
@@ -199,15 +192,21 @@ bool ArmController::moveToPose(
     {
         RCLCPP_ERROR(get_logger(), "Trajectory execution failed.");
 
-        move_group_->stop();
-        move_group_->clearPoseTargets();
-        move_group_->setStartStateToCurrentState();
+        stopArm();
 
-        throw std::runtime_error("Arm control execute failure!");
+        //throw std::runtime_error("Arm control execute failure!");
         return false;
     }
 
     return true;
+}
+void ArmController::stopArm() {
+    move_group_->stop();
+
+    rclcpp::sleep_for(std::chrono::seconds(5));
+
+    move_group_->clearPoseTargets();
+    move_group_->setStartStateToCurrentState();
 }
 
 void ArmController::controlLoop()
@@ -266,7 +265,7 @@ void ArmController::controlLoop()
             break;
         case CommandType::MoveArm:
             RCLCPP_INFO(get_logger(), "Move command");
-            moveToPose(cmd.pose);
+            context_.move_command_fail = !moveToPose(cmd.pose);
             break;
         case CommandType::SelectNextApple:
             RCLCPP_INFO(get_logger(), "Next Apple command");
@@ -282,7 +281,7 @@ void ArmController::controlLoop()
             break;           
         case CommandType::StopArm:
             RCLCPP_INFO(get_logger(), "Stop command");
-            //move_group_->stop();
+            stopArm();
             break;
         case CommandType::VisionScan:
             RCLCPP_INFO(get_logger(), "Vision scan command");
@@ -567,7 +566,7 @@ void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
     geometry_msgs::msg::TransformStamped t_dummy_qr;
     try {
         t_dummy_qr = tf_buffer_->lookupTransform(
-            "dummy_link", "QR_Code_1",
+            "dummy_link", "QR_SE",
             tf2::TimePointZero);
     } catch (const tf2::TransformException & ex) {
         RCLCPP_INFO(

@@ -3,6 +3,14 @@
 RobotCommand StateMachine::update(RobotContext& ctx) 
 {
     RobotCommand nextCommand;
+    if (ctx.move_command_fail) {
+        // Move command fail handler
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Monitor;
+        changeState(ctx, nextCommand.requested_state);
+        ctx.move_command_fail = false; // Reset error bit to reeneter control loop
+        return nextCommand;
+    }
     switch (ctx.state) {
         case RobotState::Monitor:
             nextCommand = handleMonitor(ctx);
@@ -145,7 +153,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
     {
         ctx.step = 2;
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::StopArm;
+        nextCommand.type = CommandType::None;
         nextCommand.requested_state = RobotState::Pick;
         return nextCommand;
     }
