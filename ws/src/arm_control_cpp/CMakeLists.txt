@@ -92,6 +92,14 @@ target_link_libraries(arm_control_cpp
     utils
 )
 
+install(TARGETS
+  arm_control_cpp
+  DESTINATION lib/${PROJECT_NAME})
+install(
+    DIRECTORY include/
+    DESTINATION include
+)
+
 
 function(add_robot_test TARGET SOURCE)
 
@@ -132,13 +140,6 @@ add_robot_test(
     test_vision_scan
 )
 
-install(TARGETS
-  arm_control
-  DESTINATION lib/${PROJECT_NAME})
-install(
-    DIRECTORY include/
-    DESTINATION include
-)
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
