@@ -33,7 +33,7 @@ ArmController::ArmController() : Node("arm_controller")
     suction_client_ = create_client<apple_interfaces::srv::SuctionCommand>("/suction_action");
     bin_manager_client_ = create_client<apple_interfaces::srv::UpdateBin>("/update_bin");
     vacuum_timer_ = create_wall_timer(
-        std::chrono::milliseconds(100),
+        std::chrono::milliseconds(200),
         std::bind(&ArmController::monitorVacuum, this),
         timer_callback_group_
     );
@@ -107,7 +107,7 @@ void ArmController::suctionCallback(
     uint8_t mask = (16 << relay_num); // Last 4 bits of integer
     if (latest_vacuum_state_ & mask) vacuum_consensus_count_++;
     else vacuum_consensus_count_ = 0;
-    if (vacuum_consensus_count_ > 5 && !context_.suction_state)
+    if (vacuum_consensus_count_ > 25 && !context_.suction_state)
     {
         std::lock_guard<std::mutex> lock(context_mutex_);
         context_.suction_state = true;
@@ -293,6 +293,7 @@ void ArmController::controlLoop()
             break;
         default:
             RCLCPP_INFO(get_logger(), "No command specified!");
+            rclcpp::sleep_for(std::chrono::milliseconds(500));
     }
     // Update context appropriately
     {
@@ -330,7 +331,7 @@ bool ArmController::holdForUser() {
     RCLCPP_INFO(get_logger(), "Execute next step?");
     block = true;
     while(rclcpp::ok() && block && !break_) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        rclcpp::sleep_for(std::chrono::milliseconds(500));
     }
     return true;
 }
@@ -382,7 +383,7 @@ void ArmController::monitorVacuum() {
             return; // success
         }
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    // rclcpp::sleep_for(std::chrono::milliseconds(400));
     return;
 }
 bool ArmController::createVisionScan(uint8_t scan_type)
@@ -398,7 +399,7 @@ bool ArmController::createVisionScan(uint8_t scan_type)
     }
     {
         std::lock_guard<std::mutex> ctx_lock(context_mutex_);
-        context_.vision_scan_fail = false;
+        context_.vision_scan_available = false;
     }  
     VisionScan::Goal goal_msg;
     goal_msg.order = scan_type;
@@ -504,7 +505,6 @@ void ArmController::feedback_callback(
             pose.pose.orientation.w);
         updateBinPose(pose);
     }
-    vision_goal_handle_.reset();
 }
 
 void ArmController::result_callback(
@@ -520,12 +520,6 @@ void ArmController::result_callback(
             );
 
             auto result_msg = result.result;
-
-            // Example:
-            // result_msg->apples
-            // result_msg->qr_pose
-
-            return;
         }
 
         case rclcpp_action::ResultCode::ABORTED:
@@ -549,10 +543,10 @@ void ArmController::result_callback(
             );
             break;
     }
-    // Any case apart from SUCCESS is fail
+    // Any case resets the flag
     {
         std::lock_guard<std::mutex> ctx_lock(context_mutex_);
-        context_.vision_scan_fail = true;
+        context_.vision_scan_available = true;
     }
 }
 
@@ -602,7 +596,7 @@ void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
         //Reject pose
         {
             std::lock_guard<std::mutex> ctx_lock(context_mutex_);
-            context_.vision_scan_fail = true;
+            context_.vision_scan_available = true;
         }     
         return;
     }

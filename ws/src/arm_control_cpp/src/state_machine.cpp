@@ -95,6 +95,13 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Hold) throw std::runtime_error("Improper state!");
 
+    if (ctx.suction_state)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::ChutePrepare;
+        return nextCommand;
+    }
     if (ctx.consensus_size > 0) 
     {
         RobotCommand nextCommand;
@@ -105,16 +112,9 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
     else
     {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = getPoseForState(ctx);
-        nextCommand.requested_state = RobotState::HeatScan;
-        return nextCommand;
-    }
-    if (ctx.suction_state)
-    {
-        RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::ChutePrepare;
+        nextCommand.requested_state = RobotState::HeatScan;
+        ctx.step = 0;
         return nextCommand;
     }
 }
@@ -264,7 +264,7 @@ RobotCommand StateMachine::handleQRSearch(RobotContext& ctx)
         ctx.step = 0;
         return nextCommand;
     }
-    if (ctx.vision_scan_fail) {
+    if (ctx.vision_scan_available) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::QRScan;
         nextCommand.requested_state = RobotState::QRSearch;
@@ -347,9 +347,22 @@ RobotCommand StateMachine::handleChuteRetreat(RobotContext& ctx)
 RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::HeatScan) throw std::runtime_error("Improper state!");
+    if (ctx.step == 0) {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::VisionScan;
+        nextCommand.requested_state = RobotState::HeatScan;
+        ctx.step = 1;
+        return nextCommand;
+    }
+    if (ctx.vision_scan_available) {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Monitor;
+        return nextCommand;
+    }
     RobotCommand tempCommand;
-    tempCommand.type = CommandType::VisionScan;
-    tempCommand.requested_state = RobotState::Monitor;
+    tempCommand.type = CommandType::None;
+    tempCommand.requested_state = RobotState::HeatScan;
     return tempCommand;
 }
 

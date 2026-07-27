@@ -297,15 +297,37 @@ class CameraDriver(Node):
             self.image_count_since_last_state = 0
         with self.results_lock:
             self.results = None
-            self.reults_qr = None    
+            self.results_qr = None    
         return GoalResponse.ACCEPT
 
     def cancel_callback(self, goal_handle):
         return CancelResponse.ACCEPT
     def execute_callback(self, goal_handle):
         goal = goal_handle.request
-        rate = self.create_rate(50)
+
+        timeout = 10.0  # seconds
+        start_time = time.monotonic()
+
         while rclpy.ok():
+            if time.monotonic() - start_time > timeout:
+                self.get_logger().warn("Vision scan timed out.")
+
+                goal_handle.abort()
+
+                result = VisionScan.Result()
+                result.status = "Vision scan timeout"
+
+                with self.results_lock:
+                    self.results = None
+                    self.results_qr = None
+
+                with self.selected_lock:
+                    self.selected_results.clear()
+
+                with self.mode_lock:
+                    self.mode = PerceptionMode.APPLE
+
+                return result
             if self.image_count_since_last_state > 20:
                 goal_handle.abort()
                 result = VisionScan.Result()
@@ -315,7 +337,7 @@ class CameraDriver(Node):
                     result.status = "Failed to init camera!"
                 with self.results_lock:
                     self.results = None
-                    self.reults_qr = None
+                    self.results_qr = None
                 self.mode = PerceptionMode.APPLE
                 return result
             with self.results_lock:
@@ -329,7 +351,7 @@ class CameraDriver(Node):
                     self.results_qr = None
                     break
 
-            rate.sleep()
+            time.sleep(0.2)
         # Enable qr scanning and find consensus
         if len(local_results) == 0:
             goal_handle.abort()
@@ -337,7 +359,7 @@ class CameraDriver(Node):
             result.status = "No selectable results"
             with self.results_lock:
                 self.results = None
-                self.reults_qr = None
+                self.results_qr = None
             return result
         world_locations = []
         with self.mode_lock:
@@ -359,7 +381,7 @@ class CameraDriver(Node):
             result.status = "Cloud Scan failure!"
             with self.results_lock:
                 self.results = None
-                self.reults_qr = None
+                self.results_qr = None
             return result
 
         feedback_msg = VisionScan.Feedback()
@@ -418,6 +440,7 @@ class CameraDriver(Node):
         pose.pose = transformedPose
 
         pose.pose.position.z += 0.1
+        pose.pose.position.y -= 0.02
         
         pose.pose.orientation.x = 0.5
         pose.pose.orientation.y = -0.5
