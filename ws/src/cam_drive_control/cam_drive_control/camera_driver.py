@@ -107,6 +107,7 @@ class CameraDriver(Node):
         self.cy = None
         self.fx = None
         self.fy = None
+        self.qr_message = None
         #==================USER DEPENDENT VARIABLES===========
         self.cv_lock = threading.Lock()
         self.clicked_locations = list()
@@ -236,6 +237,9 @@ class CameraDriver(Node):
         detections = self.qr_model.detect(image, False)
         if len(detections) != 0:
             best = max(detections, key=lambda d: d["confidence"])
+            QR_text = self.qr_model.decode(image, best)
+            if QR_text != self.qr_message:
+                return
             x1, y1, x2, y2 = map(int, np.round(best["bbox_xyxy"]))
 
             padding = 40  # pixels
@@ -290,6 +294,7 @@ class CameraDriver(Node):
         else:
             if self.mode != PerceptionMode.QR:
                 self.mode = PerceptionMode.QR
+            self.qr_message = goal_request.qr_message
 
                 #self.get_logger().info("Changing to qr mode")
 

@@ -403,6 +403,7 @@ bool ArmController::createVisionScan(uint8_t scan_type)
     }  
     VisionScan::Goal goal_msg;
     goal_msg.order = scan_type;
+    goal_msg.qr_message = "BIN_FLAG_SW";
 
     rclcpp_action::Client<VisionScan>::SendGoalOptions options;
 

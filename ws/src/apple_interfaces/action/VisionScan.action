@@ -2,6 +2,8 @@
 uint8 order
 uint8 APPLE_SCAN=0
 uint8 QR_SCAN=1
+uint32 radius
+string qr_message
 ---
 # Result
 string status
