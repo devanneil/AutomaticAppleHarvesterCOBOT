@@ -34,12 +34,12 @@
         <joint name="arm_1_joint_6" value="-0.0675"/>
     </group_state>
     <group_state name="monitor" group="arm_1">
-        <joint name="arm_1_joint_1" value="-1.5708"/>
-        <joint name="arm_1_joint_2" value="0.6632"/>
-        <joint name="arm_1_joint_3" value="-1.93732"/>
-        <joint name="arm_1_joint_4" value="1.2042"/>
-        <joint name="arm_1_joint_5" value="0.0523599"/>
-        <joint name="arm_1_joint_6" value="-0.0698132"/>
+        <joint name="arm_1_joint_1" value="-1.5707111358642578"/>
+        <joint name="arm_1_joint_2" value="0.6579362154006958"/>
+        <joint name="arm_1_joint_3" value="-1.9359232187271118"/>
+        <joint name="arm_1_joint_4" value="1.2490527629852295"/>
+        <joint name="arm_1_joint_5" value="0"/>
+        <joint name="arm_1_joint_6" value="0.04999711737036705"/>
     </group_state>
     <group_state name="qr_monitor" group="arm_1">
         <joint name="arm_1_joint_1" value="-0.4363323152065277"/>

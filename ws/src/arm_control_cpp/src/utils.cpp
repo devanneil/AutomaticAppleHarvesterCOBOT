@@ -40,13 +40,13 @@ geometry_msgs::msg::PoseStamped getPoseForState(RobotContext &ctx)
     switch (ctx.state) {
         default:
         case RobotState::Monitor:
-            return create_pose(0.515, 0.283, 1.392, -1.574, -0.140, -1.518, "base_link"); // Redo later for extensibility
+            return create_pose(0.515, 0.283, 1.392, -1.571, 0.021, -1.571, "base_link"); // Redo later for extensibility
         case RobotState::QRScan:
         case RobotState::QRSearch:
             return create_pose(0.0, 0.025, 0.1, -2.754, 0.5, 0, "QR_SE"); // Redo later for extensibility
         case RobotState::Chute:
         case RobotState::ChuteRetreat:
-            return create_pose(0.005, 0.012, 0.05, -2.0, 0.0, 0, "Chute_SE");
+            return create_pose(0.02, 0.027, 0.05, -2.0, 0.0, 0, "Chute_SE");
     }
 }
 
