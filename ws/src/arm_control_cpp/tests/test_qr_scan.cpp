@@ -5,8 +5,18 @@
 #include <memory>
 #include <cassert>
 
+class TestArmController : public ArmController
+{
+public:
+    using ArmController::getNextPose;
+    using ArmController::createQRScan;
+    using ArmController::context_;
+    using ArmController::controlLoop;
+    using ArmController::suction_timeout_;
+};
+
 std::atomic<bool> shutdown_requested{false};
-std::shared_ptr<ArmController> node;
+std::shared_ptr<TestArmController> node;
 
 
 void sigintHandler(int);
@@ -20,7 +30,7 @@ int main(int argc, char * argv[])
 
     std::signal(SIGINT, sigintHandler);
 
-    node = std::make_shared<ArmController>();
+    node = std::make_shared<TestArmController>();
 
     rclcpp::executors::MultiThreadedExecutor executor;
 
@@ -30,17 +40,23 @@ int main(int argc, char * argv[])
 
     node->initializeMoveIt();
 
-    // while (!shutdown_requested)
-    // {
-    //     //node->controlLoop();
+    // Create seeded context
+    node->context_.state = RobotState::QRScan;
+    node->createQRScan();
+    auto start_time = std::chrono::steady_clock::now();
+    while (!timeout_elapsed(start_time, std::chrono::seconds(10)))
+    {
+        node->controlLoop();
+    }
+    // Iterate state from seeded context
+    RCLCPP_WARN(node->get_logger(), "Inspect the bin in RVIZ. Is it correctly placed?");
+    node->holdForUser();
 
-    //     if (node->break_)
-    //         break;
-
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // }
-
-    assert(false && "NO TEST IMPLEMENTED!");
+    while (node->context_.state != RobotState::Monitor)
+    {
+        node->controlLoop();
+    }
+    node->controlLoop();
 
     executor.cancel();  
     spinner.join();

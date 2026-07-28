@@ -238,13 +238,19 @@ RobotCommand StateMachine::handleQRScan(RobotContext& ctx)
         ctx.step = 0;
         return nextCommand;
     }
-    if (timeout_elapsed(ctx.last_state, std::chrono::milliseconds(10000)))
+    if (timeout_elapsed(ctx.last_state, std::chrono::seconds(10)))
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = getPoseForState(ctx);
         nextCommand.requested_state = RobotState::QRSearch;
         ctx.step = 0;
+        return nextCommand;
+    }
+    if (ctx.vision_scan_available) {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::QRScan;
+        nextCommand.requested_state = RobotState::QRScan;
         return nextCommand;
     }
     RobotCommand nextCommand;

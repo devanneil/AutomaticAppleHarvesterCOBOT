@@ -5,8 +5,18 @@
 #include <memory>
 #include <cassert>
 
+class TestArmController : public ArmController
+{
+public:
+    using ArmController::getNextPose;
+    using ArmController::createAppleScan;
+    using ArmController::context_;
+    using ArmController::controlLoop;
+    using ArmController::suction_timeout_;
+};
+
 std::atomic<bool> shutdown_requested{false};
-std::shared_ptr<ArmController> node;
+std::shared_ptr<TestArmController> node;
 
 
 void sigintHandler(int);
@@ -20,7 +30,7 @@ int main(int argc, char * argv[])
 
     std::signal(SIGINT, sigintHandler);
 
-    node = std::make_shared<ArmController>();
+    node = std::make_shared<TestArmController>();
 
     rclcpp::executors::MultiThreadedExecutor executor;
 
@@ -30,17 +40,24 @@ int main(int argc, char * argv[])
 
     node->initializeMoveIt();
 
-    // while (!shutdown_requested)
-    // {
-    //     //node->controlLoop();
-
-    //     if (node->break_)
-    //         break;
-
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // }
-
-    assert(false && "NO TEST IMPLEMENTED!");
+    RCLCPP_INFO(node->get_logger(), "Queue up apple pose for testing.");
+    node->holdForUser();
+    assert(node->createAppleScan() && "VISION SCAN FAILURE!");
+    // Arbitrary sleep
+    rclcpp::sleep_for(std::chrono::seconds(5));
+    assert(node->context_.consensus_size >= 1 && "NO CONSENSUS FOUND!");
+    auto pose = node->getNextPose();
+    RCLCPP_INFO(
+        node->get_logger(),
+        "PoseStamped [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
+        pose.header.frame_id.c_str(),
+        pose.pose.position.x,
+        pose.pose.position.y,
+        pose.pose.position.z,
+        pose.pose.orientation.x,
+        pose.pose.orientation.y,
+        pose.pose.orientation.z,
+        pose.pose.orientation.w);
 
     executor.cancel();  
     spinner.join();
