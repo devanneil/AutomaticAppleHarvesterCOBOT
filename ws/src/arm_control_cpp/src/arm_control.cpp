@@ -363,6 +363,7 @@ rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedFuture ArmControlle
     req->relay_id = relay_num;
     req->state = false;
     auto future = suction_client_->async_send_request(req);
+    rclcpp::sleep_for(std::chrono::milliseconds(300));
     {
         std::lock_guard<std::mutex> ctx_lock(context_mutex_);
         context_.suction_state = false;
