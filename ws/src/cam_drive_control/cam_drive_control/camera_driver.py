@@ -108,6 +108,9 @@ class CameraDriver(Node):
         self.fx = None
         self.fy = None
         self.qr_message = None
+        self.headless = False
+        self.center_coordinates = (0, 0)
+        self.scan_radius = 300
         #==================USER DEPENDENT VARIABLES===========
         self.cv_lock = threading.Lock()
         self.clicked_locations = list()
@@ -142,7 +145,8 @@ class CameraDriver(Node):
         with self.image_lock:
             self.latest_image_raw = self.convert_image(image_msg)
             self.image_count_since_last_state += 1
-
+        height, width = self.latest_image_raw.shape[:2]
+        self.center_coordinates = (width // 2, height // 2)
         if self.mode == PerceptionMode.APPLE:
             self.detect_apples(self.latest_image_raw, depth_msg)
 
@@ -201,36 +205,54 @@ class CameraDriver(Node):
         with self.results_lock:
             self.results = iter_results[0]
 
-        for u, v in local_clicked:
+        if not self.headless:
+            for u, v in local_clicked:
 
+                for box in self.results.boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+
+
+                    if x1 <= u <= x2 and y1 <= v <= y2:
+
+                        if float(box.conf[0]) < self.confidence_threshold:
+                            return
+
+                        # self.get_logger().info(
+                        #     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
+                        # )
+                        t_base_cam = self.tf_buffer.lookup_transform(
+                            "base_link",
+                            depth_ros_msg.header.frame_id,
+                            depth_ros_msg.header.stamp
+                        )
+                        newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
+                            self.convert_image(depth_ros_msg), t_base_cam)
+                        append = True
+                        for cons in self.selected_results:
+                            if consensusEqual(cons, newCons):
+                                append = False
+                        if append:
+                            with self.selected_lock:
+                                self.selected_results.append(newCons)
+        else:
+            with self.selected_lock:
+                self.selected_results.clear()
             for box in self.results.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                circle_coords_1 = (x1 - self.center_coordinates[0], y1 - self.center_coordinates[1])
+                circle_coords_2 = (x2 - self.center_coordinates[0], y2 - self.center_coordinates[1])
 
-
-                if x1 <= u <= x2 and y1 <= v <= y2:
-
-                    if float(box.conf[0]) < self.confidence_threshold:
-                        return
-
-                    # self.get_logger().info(
-                    #     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
-                    # )
-                    t_base_cam = self.tf_buffer.lookup_transform(
-                        "base_link",
-                        depth_ros_msg.header.frame_id,
-                        depth_ros_msg.header.stamp
-                    )
-                    newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
-                        self.convert_image(depth_ros_msg), t_base_cam)
-                    append = True
-                    for cons in self.selected_results:
-                        if consensusEqual(cons, newCons):
-                            append = False
-                    if append:
+                if (circle_coords_1[0]**2 + circle_coords_1[1]**2 < self.scan_radius**2) or (circle_coords_2[0]**2 + circle_coords_2[1]**2 < self.scan_radius**2):
+                    if float(box.conf[0]) >= self.confidence_threshold:
+                        t_base_cam = self.tf_buffer.lookup_transform(
+                            "base_link",
+                            depth_ros_msg.header.frame_id,
+                            depth_ros_msg.header.stamp
+                        )
+                        newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
+                            self.convert_image(depth_ros_msg), t_base_cam)
                         with self.selected_lock:
                             self.selected_results.append(newCons)
-
-            return
         
 
     def detect_qr(self, image, depth_ros_msg):

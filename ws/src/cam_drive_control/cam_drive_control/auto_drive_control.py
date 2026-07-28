@@ -19,14 +19,10 @@ def main(args=None):
 
     # Create CV Context
     cv2.namedWindow("Camera View", cv2.WINDOW_NORMAL)
-    cv2.setMouseCallback(
-        "Camera View",
-        mouse_event_handler,
-        node,
-    )
     ros_thread = threading.Thread(target=node_thread)
     ros_thread.start()
-
+    
+    node.headless = True
     while rclpy.ok():
         if node is None:
             time.sleep(0.1)
@@ -45,7 +41,9 @@ def main(args=None):
                     3
                 )
             if annotated_img is not None:
-                cv2.circle(annotated_img, node.center_coordinates, node.scan_radius, (0,255,0),3)
+                height, width = annotated_img.shape[:2]
+                center_coordinates = (width // 2, height // 2)
+                cv2.circle(annotated_img, center_coordinates, 300, (0,255,0),3)
                 cv2.imshow("Camera View", annotated_img)
         # QR Case, image_results is tuple of (4,2)
         elif node.mode == PerceptionMode.QR and qr_results is not None:
@@ -94,10 +92,3 @@ def node_thread():
         pass
     finally:
         executor.shutdown()
-
-# Mouse callback function
-def mouse_event_handler(event, x, y, flags, node):
-    if event != cv2.EVENT_LBUTTONDOWN:
-        return
-
-    node.handle_click(x, y)
