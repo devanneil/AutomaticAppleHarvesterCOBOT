@@ -7,12 +7,13 @@ from tf2_ros import Buffer, TransformListener, TransformException
 from tf2_geometry_msgs import do_transform_pose
 from std_msgs.msg import Int32
 from sensor_msgs.msg import Image
-from geometry_msgs.msg import PoseStamped, PointStamped
+from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray
 
 from apple_interfaces.srv import ScanPose
 from apple_interfaces.action import VisionScan
 
 from dataclasses import dataclass
+import time
 
 @dataclass
 class ScanPose:
@@ -21,8 +22,10 @@ class ScanPose:
     claimed: bool
 NEXT_ID = 0
 
-RADIUS = VisionScan.Goal.RADIUS
-
+RADIUS = VisionScan.Goal.RADIUS # pixels
+TIME_BETWEEN_SCAN = 5 # seconds
+MAX_RIGHT_SCAN = 0.7 # meters
+SCAN_PLANE_DISTANCE = 2.15 # meters
 
 class ScoutCamera(Node):
     """A ROS node that reads from the scout camera and publishes scan positions for the arms to clear"""
@@ -59,15 +62,18 @@ class ScoutCamera(Node):
 
         self.pose_timer = self.create_timer(
             0.1,
-            self.publish_pose_list,
+            self.control_loop,
             callback_group=self.group_1
         )
         self.pose_publisher = self.create_publisher(
-            PoseStamped,
+            PoseArray,
             "/scout1_cam/pose_visualizer",
             10
         )
+
+
         self.pose_list = []
+        self.last_scan_time = 0
     
     def shutdown(self):
         if rclpy.ok():
@@ -94,7 +100,7 @@ class ScoutCamera(Node):
             pose_in.header.frame_id = self.frame_id
             pose_in.header.stamp = self.get_clock().now().to_msg()
             pose_in.pose.position.x = 0.0
-            pose_in.pose.position.y = 2.0
+            pose_in.pose.position.y = SCAN_PLANE_DISTANCE
             pose_in.pose.position.z = 0.0
             pose_in.pose.orientation.x = 0.0
             pose_in.pose.orientation.y = 0.0
@@ -133,11 +139,70 @@ class ScoutCamera(Node):
                 rate = self.create_rate(2, self.get_clock())
                 rate.sleep()
 
-    def publish_pose_list(self):
+    def control_loop(self):
+        if not self.tf_ready:
+            return False
+        now = time.time()
+        newScan = False
+        pa = PoseArray()
+        pa.header.stamp = self.get_clock().now().to_msg()
+        pa.header.frame_id = "map"
         for scan_pose in self.pose_list:
             scan_pose.pose.header.stamp = self.get_clock().now().to_msg()
-            self.pose_publisher.publish(scan_pose.pose)
+            pa.poses.append(scan_pose.pose.pose)
+        self.pose_publisher.publish(pa)
 
+        if now - self.last_scan_time > TIME_BETWEEN_SCAN:
+            left_scan = self.get_leftmost_scan()
+            if left_scan is None:
+                return
+            left_pose = left_scan.pose
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    self.frame_id,
+                    "map",
+                    rclpy.time.Time()     
+                )
+            except TransformException:
+                self.get_logger().debug("Waiting for TF tree...")
+                return
+            pose_out = do_transform_pose(left_pose.pose, transform)
+            if pose_out.position.z < -MAX_RIGHT_SCAN: #Right -> -z
+                newScan = True
+            
+        if newScan:
+            self.get_logger().info("Scanning here!")
+            self.last_scan_time = time.time()
+            # Example PoseStamped in base_link frame
+            pose_in = PoseStamped()
+            pose_in.header.frame_id = self.frame_id
+            pose_in.header.stamp = self.get_clock().now().to_msg()
+            pose_in.pose.position.x = 0.0
+            pose_in.pose.position.y = SCAN_PLANE_DISTANCE
+            pose_in.pose.position.z = 0.0
+            pose_in.pose.orientation.x = 0.0
+            pose_in.pose.orientation.y = 0.0
+            pose_in.pose.orientation.z = 0.0
+            pose_in.pose.orientation.w = 1.0
+
+            self.create_scan_pose(pose_in)
+
+    def get_leftmost_scan(self):
+        if len(self.pose_list) > 0:
+            return max(
+                self.pose_list,
+                key=lambda scan: scan.pose.pose.position.y
+            )
+        else:
+            return None
+    def get_rightmost_scan(self):
+        if len(self.pose_list) > 0:
+            return min(
+                self.pose_list,
+                key=lambda scan: scan.pose.pose.position.y
+            )
+        else:
+            return None
     def clear_callback(self, msg):
         for scan_pose in self.pose_list:
             if msg.data == scan_pose.ID:
