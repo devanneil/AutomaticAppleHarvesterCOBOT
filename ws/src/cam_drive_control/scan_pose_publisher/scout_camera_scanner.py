@@ -25,7 +25,7 @@ NEXT_ID = 0
 RADIUS = VisionScan.Goal.RADIUS # pixels
 TIME_BETWEEN_SCAN = 5 # seconds
 MAX_RIGHT_SCAN = 0.7 # meters
-SCAN_PLANE_DISTANCE = 2.15 # meters
+SCAN_PLANE_DISTANCE = 1.966 # meters
 
 class ScoutCamera(Node):
     """A ROS node that reads from the scout camera and publishes scan positions for the arms to clear"""
