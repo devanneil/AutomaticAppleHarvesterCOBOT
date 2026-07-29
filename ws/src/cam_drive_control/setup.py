@@ -28,7 +28,9 @@ setup(
         'console_scripts': [
             'cam_drive_control = cam_drive_control.cam_drive_control:main',
             'user_drive_control = cam_drive_control.user_drive_control:main',
-            'auto_drive_control = cam_drive_control.auto_drive_control:main'
+            'auto_drive_control = cam_drive_control.auto_drive_control:main',
+            'scout_camera_scanner = scan_pose_publisher.scout_camera_scanner:main',
+            'demo_tf_publisher = scan_pose_publisher.demo_tf_publisher:main'
         ],
     },
 )
