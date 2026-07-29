@@ -18,6 +18,18 @@
       </geometry>
     </collision>
   </link>
+  <link name="scout_link">
+    <!-- VISUAL -->
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://robot_model/meshes/DS87-Mechanical_Outline_3D.STP.stl" scale="0.002 0.002 0.002"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.3 0.3 0.3 1.0"/>
+      </material>
+    </visual>
+  </link>
   <link name="QR_SE"/>
   <!-- <link name="QR_NE"/>
   <link name="QR_NW"/>
@@ -79,5 +91,11 @@
     <origin xyz="-0.552 -0.159 1.107" rpy="0 0 -0.785"/>
     <parent link="Bin_Link"/>
     <child link="Chute_SW"/>
+  </joint>
+
+  <joint name="Scout_Cam_Static" type="fixed">
+    <origin xyz="-0.5969 1.2038 0.762" rpy="-1.57079633 -1.57079633 0.0"/>
+    <parent link="Bin_Link"/>
+    <child link="scout_link"/>
   </joint>
 </robot>

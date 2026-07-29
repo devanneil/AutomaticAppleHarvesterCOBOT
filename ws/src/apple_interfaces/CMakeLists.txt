@@ -10,6 +10,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SuctionCommand.srv"
   "srv/CloudScan.srv"
   "srv/UpdateBin.srv"
+  "srv/ScanPose.srv"
   "msg/CameraConsensus.msg"
   "action/VisionScan.action"
   DEPENDENCIES

@@ -20,15 +20,18 @@ def generate_launch_description():
             "name": "arm1_cam",
             "sn": "GDS871PBAA7110621",
             "param_file": "arm1_cam.yaml",
+            "parent_frame" : "camera_link"
         },
-        # {
-        #     "name": "scout1_cam",
-        #     "sn": "GDS871PBAA7110753",
-        #     "param_file": "scout1_cam.yaml",
-        # },
+        {
+            "name": "scout1_cam",
+            "sn": "GDS871PBAA7110753",
+            "param_file": "scout1_cam.yaml",
+            "parent_frame" : "scout_link"
+        },
     ]
 
     composable_nodes = []
+    nodes = []
 
     # -----------------------------------
     # Create composable camera nodes
@@ -55,6 +58,21 @@ def generate_launch_description():
                 ]
             )
         )
+        # -----------------------------------
+        # Static TFs
+        # -----------------------------------
+        nodes.append(
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                arguments=[
+                    "0.0", "0.0", "0.0",
+                    "0", "0", "-1.57079633",
+                    cam["parent_frame"],
+                    cam["name"]+"_frame",
+                ]
+            )
+        )
 
     # -----------------------------------
     # Container
@@ -69,23 +87,7 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
-    nodes = [container]
-
-    # -----------------------------------
-    # Static TFs
-    # -----------------------------------
-    nodes.append(
-        Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            arguments=[
-                "0.0", "0.0", "0.0",
-                "0", "0", "-1.57079633",
-                "camera_link",
-                "arm1_cam_frame",
-            ]
-        )
-    )
+    nodes.append(container)
     # nodes.append(
     #     Node(
     #         package="point_cloud_processor",
