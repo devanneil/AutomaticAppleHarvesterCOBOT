@@ -59,7 +59,7 @@ class ScoutCamera(Node):
             )
 
             self.tf_ready = True
-            self.get_logger().info("TF ready: dummy_link -> qr_frame")
+            self.get_logger().info("TF ready: dummy_link -> scout_frame")
 
             self.tf_timer.cancel()
 
