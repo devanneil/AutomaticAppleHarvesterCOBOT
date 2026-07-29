@@ -55,7 +55,8 @@ enum class CommandType
     StopSuction, // Disable suction head
     StopArm, // Halt movement
     VisionScan, // Refill consensus list
-    QRScan
+    QRScan,
+    GetNextScanPose
 };
 
 struct RobotCommand

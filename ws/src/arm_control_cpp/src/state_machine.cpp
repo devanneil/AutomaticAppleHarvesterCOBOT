@@ -180,7 +180,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
-        nextCommand.requested_state = RobotState::Monitor;
+        nextCommand.requested_state = RobotState::Hold;
         ctx.step = 0;
         return nextCommand;
     }
@@ -308,7 +308,7 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
         nextCommand.pose = getPoseForState(ctx);
         nextCommand.pose.pose.position.z += 0.05;
         nextCommand.requested_state = RobotState::Chute;
-        ctx.step = 1;
+        ctx.step = 2;
         return nextCommand;
     }
     if (ctx.step == 1) {
@@ -346,7 +346,7 @@ RobotCommand StateMachine::handleChuteRetreat(RobotContext& ctx)
     }
     RobotCommand nextCommand;
     nextCommand.type = CommandType::None;
-    nextCommand.requested_state = RobotState::Monitor;
+    nextCommand.requested_state = RobotState::Hold;
     return nextCommand;
 }
 
@@ -354,16 +354,24 @@ RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::HeatScan) throw std::runtime_error("Improper state!");
     if (ctx.step == 0) {
+        RobotCommand tempCommand;
+        tempCommand.type = CommandType::MoveArm;
+        tempCommand.pose = getPoseForState(ctx);
+        tempCommand.requested_state = RobotState::HeatScan;
+        ctx.step = 1;
+        return tempCommand;
+    }
+    if (ctx.step == 1) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::VisionScan;
         nextCommand.requested_state = RobotState::HeatScan;
-        ctx.step = 1;
+        ctx.step = 2;
         return nextCommand;
     }
     if (ctx.vision_scan_available) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::Monitor;
+        nextCommand.requested_state = RobotState::Hold;
         return nextCommand;
     }
     RobotCommand tempCommand;

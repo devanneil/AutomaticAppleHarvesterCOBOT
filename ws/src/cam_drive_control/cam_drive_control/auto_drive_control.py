@@ -41,9 +41,7 @@ def main(args=None):
                     3
                 )
             if annotated_img is not None:
-                height, width = annotated_img.shape[:2]
-                center_coordinates = (width // 2, height // 2)
-                cv2.circle(annotated_img, center_coordinates, 300, (0,255,0),3)
+                cv2.circle(annotated_img, node.center_coordinates, node.scan_radius, (0,255,0),3)
                 cv2.imshow("Camera View", annotated_img)
         # QR Case, image_results is tuple of (4,2)
         elif node.mode == PerceptionMode.QR and qr_results is not None:

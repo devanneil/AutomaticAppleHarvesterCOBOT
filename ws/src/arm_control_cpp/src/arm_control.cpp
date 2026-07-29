@@ -293,7 +293,7 @@ void ArmController::controlLoop()
             break;
         default:
             RCLCPP_INFO(get_logger(), "No command specified!");
-            rclcpp::sleep_for(std::chrono::milliseconds(500));
+            rclcpp::sleep_for(std::chrono::milliseconds(10));
     }
     // Update context appropriately
     {
@@ -522,6 +522,7 @@ void ArmController::result_callback(
             );
 
             auto result_msg = result.result;
+            break;
         }
 
         case rclcpp_action::ResultCode::ABORTED:

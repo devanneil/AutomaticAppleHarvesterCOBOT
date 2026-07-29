@@ -7,6 +7,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from ament_index_python.packages import get_package_share_directory
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 from tf2_ros import Buffer, TransformListener
+from tf2_py import TransformException
 # import tf_transformations  # For quaternion to Euler conversion
 
 from sensor_msgs.msg import Image, CameraInfo
@@ -110,7 +111,7 @@ class CameraDriver(Node):
         self.qr_message = None
         self.headless = False
         self.center_coordinates = (0, 0)
-        self.scan_radius = 300
+        self.scan_radius = VisionScan.Goal.RADIUS
         #==================USER DEPENDENT VARIABLES===========
         self.cv_lock = threading.Lock()
         self.clicked_locations = list()
@@ -220,11 +221,15 @@ class CameraDriver(Node):
                         # self.get_logger().info(
                         #     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
                         # )
-                        t_base_cam = self.tf_buffer.lookup_transform(
-                            "base_link",
-                            depth_ros_msg.header.frame_id,
-                            depth_ros_msg.header.stamp
-                        )
+                        try:
+                            t_base_cam = self.tf_buffer.lookup_transform(
+                                "base_link",
+                                depth_ros_msg.header.frame_id,
+                                depth_ros_msg.header.stamp
+                            )
+                        except TransformException:
+                            self.get_logger().error("TF Error!")
+                            return
                         newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
                             self.convert_image(depth_ros_msg), t_base_cam)
                         append = True
@@ -241,14 +246,23 @@ class CameraDriver(Node):
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                 circle_coords_1 = (x1 - self.center_coordinates[0], y1 - self.center_coordinates[1])
                 circle_coords_2 = (x2 - self.center_coordinates[0], y2 - self.center_coordinates[1])
+                circle_coords_3 = (x1 - self.center_coordinates[0], y2 - self.center_coordinates[1])
+                circle_coords_4 = (x2 - self.center_coordinates[0], y1 - self.center_coordinates[1])
 
-                if (circle_coords_1[0]**2 + circle_coords_1[1]**2 < self.scan_radius**2) or (circle_coords_2[0]**2 + circle_coords_2[1]**2 < self.scan_radius**2):
+                if ((circle_coords_1[0]**2 + circle_coords_1[1]**2 < self.scan_radius**2) 
+                    or (circle_coords_2[0]**2 + circle_coords_2[1]**2 < self.scan_radius**2)
+                    or (circle_coords_3[0]**2 + circle_coords_3[1]**2 < self.scan_radius**2)
+                    or (circle_coords_4[0]**2 + circle_coords_4[1]**2 < self.scan_radius**2)):
                     if float(box.conf[0]) >= self.confidence_threshold:
-                        t_base_cam = self.tf_buffer.lookup_transform(
-                            "base_link",
-                            depth_ros_msg.header.frame_id,
-                            depth_ros_msg.header.stamp
-                        )
+                        try:
+                            t_base_cam = self.tf_buffer.lookup_transform(
+                                "base_link",
+                                depth_ros_msg.header.frame_id,
+                                depth_ros_msg.header.stamp
+                            )
+                        except TransformException:
+                            self.get_logger().error("TF Error!")
+                            return
                         newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
                             self.convert_image(depth_ros_msg), t_base_cam)
                         with self.selected_lock:
@@ -272,11 +286,15 @@ class CameraDriver(Node):
             y1 = max(0, y1 - padding)
             x2 = min(width - 1, x2 + padding)
             y2 = min(height - 1, y2 + padding)
-            t_base_cam = self.tf_buffer.lookup_transform(
-                "base_link",
-                depth_ros_msg.header.frame_id,
-                depth_ros_msg.header.stamp
-            )
+            try:
+                t_base_cam = self.tf_buffer.lookup_transform(
+                    "base_link",
+                    depth_ros_msg.header.frame_id,
+                    depth_ros_msg.header.stamp
+                )
+            except TransformException:
+                self.get_logger().error("TF Error!")
+                return
             newCons = ConsensusStruct(x1, y1, x2, y2, best["confidence"], 
                 self.convert_image(depth_ros_msg), t_base_cam)
             with self.results_lock:
@@ -393,7 +411,7 @@ class CameraDriver(Node):
             self.mode = PerceptionMode.APPLE
         if goal.order == VisionScan.Goal.APPLE_SCAN:
             for cons in local_results:
-                valid, pose = self.consToPoseEstimate(cons)
+                valid, pose = self.houghPoseEstimate(cons)
                 if valid:
                     world_locations.append(pose)
         else:
@@ -466,13 +484,221 @@ class CameraDriver(Node):
         pose = PoseStamped()
         pose.pose = transformedPose
 
-        pose.pose.position.z += 0.1
+        pose.pose.position.x += 0.01
         pose.pose.position.y -= 0.02
+        pose.pose.position.z += 0.09
         
         pose.pose.orientation.x = 0.5
         pose.pose.orientation.y = -0.5
         pose.pose.orientation.z = 0.5
         pose.pose.orientation.w = -0.5
         pose.header.frame_id = "base_link"
+
+        return True, pose
+
+
+    def houghPoseEstimate(self, cons: ConsensusStruct):
+        if self.cx is None:
+            return False, None
+
+        x1 = int(min(cons.u1, cons.u2))
+        y1 = int(min(cons.v1, cons.v2))
+        x2 = int(max(cons.u1, cons.u2))
+        y2 = int(max(cons.v1, cons.v2))
+
+        roi = cons.depth_field[y1:y2, x1:x2]
+
+        valid = (
+            np.isfinite(roi) &
+            (roi > 10) &
+            (roi < 65535)
+        )
+
+        if np.count_nonzero(valid) < 20:
+            return False, None
+
+        # Depth is mm -> meters
+        z = roi[valid].astype(np.float32) / 1000.0
+
+        v_coords, u_coords = np.indices(roi.shape)
+
+        u = u_coords[valid] + x1
+        v = v_coords[valid] + y1
+
+        # Convert depth pixels -> camera coordinates
+        x = (u - self.cx) * z / self.fx
+        y = (v - self.cy) * z / self.fy
+
+        points = np.column_stack((x, y, z))
+
+        # ------------------------------------------------------------
+        # RANSAC sphere fitting
+        # ------------------------------------------------------------
+
+        # Expected apple radius in meters.
+        # Adjust this to your actual apples.
+        radius_min = 0.025
+        radius_max = 0.060
+
+        best_center = None
+        best_radius = None
+        best_inliers = None
+
+        num_iterations = 500
+        distance_threshold = 0.005  # 5 mm
+
+        num_points = len(points)
+
+        if num_points < 4:
+            return False, None
+
+        for _ in range(num_iterations):
+
+            # Pick 4 random points
+            indices = np.random.choice(num_points, 4, replace=False)
+            sample = points[indices]
+
+            # Solve sphere from 4 points
+            p1 = sample[0]
+
+            A = 2.0 * (sample[1:] - p1)
+            b = (
+                np.sum(sample[1:] ** 2, axis=1)
+                - np.sum(p1 ** 2)
+            )
+
+            try:
+                center = np.linalg.solve(A, b)
+            except np.linalg.LinAlgError:
+                # Points were geometrically degenerate
+                continue
+
+            radius = np.linalg.norm(center - p1)
+
+            # Reject spheres with unreasonable radius
+            if radius < radius_min or radius > radius_max:
+                continue
+
+            # Calculate distance of every point from sphere surface
+            distances = np.abs(
+                np.linalg.norm(points - center, axis=1) - radius
+            )
+
+            inliers = distances < distance_threshold
+
+            num_inliers = np.count_nonzero(inliers)
+
+            if best_inliers is None or num_inliers > np.count_nonzero(best_inliers):
+                best_center = center
+                best_radius = radius
+                best_inliers = inliers
+
+        if best_center is None:
+            return False, None
+
+        # ------------------------------------------------------------
+        # Refine sphere using all RANSAC inliers
+        # ------------------------------------------------------------
+
+        inlier_points = points[best_inliers]
+
+        if len(inlier_points) < 10:
+            return False, None
+
+        # Linear least-squares sphere fit:
+        #
+        # x² + y² + z² =
+        #     2cx*x + 2cy*y + 2cz*z + d
+        #
+        # radius² = cx² + cy² + cz² + d
+
+        A = np.column_stack((
+            2.0 * inlier_points[:, 0],
+            2.0 * inlier_points[:, 1],
+            2.0 * inlier_points[:, 2],
+            np.ones(len(inlier_points))
+        ))
+
+        b = np.sum(inlier_points ** 2, axis=1)
+
+        try:
+            solution, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+        except np.linalg.LinAlgError:
+            return False, None
+
+        center = solution[:3]
+        d = solution[3]
+
+        radius_squared = np.dot(center, center) + d
+
+        if radius_squared <= 0:
+            return False, None
+
+        radius = np.sqrt(radius_squared)
+
+        if radius < radius_min or radius > radius_max:
+            return False, None
+
+        # ------------------------------------------------------------
+        # Lowest-X point on sphere
+        # ------------------------------------------------------------
+
+        surface_point = np.array([
+            center[0] - radius,
+            center[1],
+            center[2]
+        ])
+
+        print(
+            f"Sphere center: "
+            f"{center[0]:.3f}, "
+            f"{center[1]:.3f}, "
+            f"{center[2]:.3f}"
+        )
+
+        print(f"Sphere radius: {radius:.3f}")
+
+        print(
+            f"Lowest-X surface point: "
+            f"{surface_point[0]:.3f}, "
+            f"{surface_point[1]:.3f}, "
+            f"{surface_point[2]:.3f}"
+        )
+
+        # ------------------------------------------------------------
+        # Transform camera/depth frame -> base_link
+        # ------------------------------------------------------------
+
+        surface_pose = Pose()
+
+        surface_pose.position.x = float(surface_point[0])
+        surface_pose.position.y = float(surface_point[1])
+        surface_pose.position.z = float(surface_point[2])
+
+        transformedPose = tf2_geometry_msgs.do_transform_pose(
+            surface_pose,
+            cons.tf
+        )
+
+        print(
+            f"Base frame surface point: "
+            f"{transformedPose.position.x:.3f} "
+            f"{transformedPose.position.y:.3f} "
+            f"{transformedPose.position.z:.3f}"
+        )
+
+        pose = PoseStamped()
+        pose.pose = transformedPose
+        pose.header.frame_id = "base_link"
+
+        # Your existing tool offset
+        pose.pose.position.x += 0.015
+        pose.pose.position.y -= 0.04
+        pose.pose.position.z += 0.05
+
+        pose.pose.orientation.x = 0.5
+        pose.pose.orientation.y = -0.5
+        pose.pose.orientation.z = 0.5
+        pose.pose.orientation.w = -0.5
 
         return True, pose

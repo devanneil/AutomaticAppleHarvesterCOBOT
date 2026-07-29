@@ -41,7 +41,7 @@ int main(int argc, char * argv[])
     node->initializeMoveIt();
 
     RCLCPP_INFO(node->get_logger(), "Queue up apple pose for testing.");
-    node->holdForUser();
+    //node->holdForUser();
     assert(node->createAppleScan() && "VISION SCAN FAILURE!");
     // Arbitrary sleep
     rclcpp::sleep_for(std::chrono::seconds(5));
