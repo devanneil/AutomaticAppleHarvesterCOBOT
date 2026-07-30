@@ -1,0 +1,69 @@
+<robot name="workspace">
+    <link name="base_link"/>
+
+    <link name="arm_1_main_workspace">
+        <workspace_area name="arm_1_main_workspace" type="normal">
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.1524 1.2192"/>
+            <rectangle size="1.2192 1.2192"/> 
+        </workspace_area>
+        <visual name="arm_1_main_workspace_visual">
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.1524 1.2192"/>
+            <geometry>
+                <box size="0.1 1.2192 1.2192"/> 
+            </geometry>
+            <material name="green">
+                <color rgba="0 1.0 0 0.4"/>
+            </material>
+        </visual>
+    </link>
+
+    <link name="arm_1_bottom_workspace">
+        <workspace_area name="arm_1_bottom_workspace" type="critical">
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.4572 0.3048"/>
+            <rectangle size="0.3048 0.6096"/> 
+        </workspace_area>
+        <visual name="arm_1_bottom_workspace_visual">
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.6096 0.3048"/>
+            <geometry>
+                <box size="0.1 0.3048 0.6096"/> 
+            </geometry>
+            <material name="red">
+                <color rgba="1.0 0 0 0.4"/>
+            </material>
+        </visual>
+    </link>
+
+    <link name="arm_1_right_workspace">
+        <workspace_area name="arm_1_right_workspace" type="critical">
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.6096 1.2192"/>
+            <rectangle size="0.3048 1.2192"/> 
+        </workspace_area>
+        <visual name="arm_1_right_workspace_visual">
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.6096 1.2192"/>
+            <geometry>
+                <box size="0.1 0.3048 1.2192"/> 
+            </geometry>
+            <material name="red">
+                <color rgba="1.0 0 0 0.4"/>
+            </material>
+        </visual>
+    </link>
+
+    <joint name="arm_1_main_workspace_fixed" type="fixed">
+        <parent link="base_link"/>
+        <child link="arm_1_main_workspace"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.7 0.0 0.0"/>
+    </joint>
+
+    <joint name="arm_1_bottom_workspace_fixed" type="fixed">
+        <parent link="base_link"/>
+        <child link="arm_1_bottom_workspace"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.7 0.0 0.0"/>
+    </joint>
+
+    <joint name="arm_1_right_workspace_fixed" type="fixed">
+        <parent link="base_link"/>
+        <child link="arm_1_right_workspace"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.7 0.0 0.0"/>
+    </joint>
+</robot>
