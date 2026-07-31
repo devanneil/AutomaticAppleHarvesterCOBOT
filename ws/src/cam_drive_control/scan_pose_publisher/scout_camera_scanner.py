@@ -16,8 +16,21 @@ from dataclasses import dataclass
 import time
 import sys
 import os
+import threading
+import numpy as np
+import cv2
+import random
+from math import sqrt
+import heapq
+import multiprocessing
 import xml.etree.ElementTree as ET
 from ament_index_python.packages import get_package_share_directory
+from multiprocessing import Process, Queue
+from queue import Empty
+
+from ultralytics import YOLO
+from itertools import combinations, product
+
 
 @dataclass
 class ScanPose:
@@ -35,11 +48,16 @@ class RobotWorkspace:
     critical: bool
 robot_workspaces = []
 
-RADIUS = VisionScan.Goal.RADIUS # pixels
+GOAL_RADIUS = VisionScan.Goal.RADIUS # pixels
 TIME_BETWEEN_SCAN = 5 # seconds
 MAX_RIGHT_SCAN = 0.7 # meters
-SCAN_PLANE_DISTANCE = 1.966 # meters
+SCAN_PLANE_DISTANCE = 1.643 # meters between scout camera and scanning plane
+CAM_TO_WALL_DISTANCE = 0.1 # meters between arm camera and scanning plane
 MAX_POSES_IN_WS = 10
+CONFIDENCE_THRESHOLD = 0.85
+RADIUS = int(0.25 * GOAL_RADIUS)
+MAX_DEPTH_SEARCH = 30
+MAX_WIDTH_SEARCH = 50
 
 models_share = get_package_share_directory("robot_model")
 urdf_file = os.path.join(
@@ -53,6 +71,48 @@ class ScoutCamera(Node):
 
     def __init__(self):
         super().__init__('scout_camera')
+
+        self.declare_parameter('model_name', 'wsu-v9c.pt')
+
+        self.apple_model_name = self.get_parameter('model_name').value
+
+        if self.apple_model_name == "None":
+            self.get_logger().warn("No model specified, returning raw image!")
+            self.apple_model = None
+        else:
+            # Set to new model
+            try:
+                self.get_logger().info(f"Loading model: {self.apple_model_name}")
+
+                model_path = os.path.join(
+                    get_package_share_directory("cam_drive_control"),
+                    'models',
+                    self.apple_model_name
+                )
+
+                model = YOLO(model_path)
+
+                self.apple_model = model
+
+                self.get_logger().info("YOLO model loaded successfully.")
+            except Exception as e:
+                self.get_logger().error(
+                    f"Failed to load YOLO model: {e}"
+                )
+
+        self.search_request_queue = Queue(maxsize=1)
+        self.search_result_queue = Queue(maxsize=1)
+
+        self.search_process = Process(
+            target=search_process_main,
+            args=(
+                self.search_request_queue,
+                self.search_result_queue
+            ),
+            daemon=True
+        )
+
+        self.search_process.start()
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -86,6 +146,11 @@ class ScoutCamera(Node):
             self.control_loop,
             callback_group=self.group_1
         )
+        self.results_timer = self.create_timer(
+            0.1,
+            self.check_search_results,
+            callback_group=self.group_1
+        )
         self.pose_publisher = self.create_publisher(
             PoseArray,
             "/scout1_cam/pose_visualizer",
@@ -95,6 +160,10 @@ class ScoutCamera(Node):
 
         self.pose_list = []
         self.last_scan_time = 0
+        self.image_lock = threading.Lock()
+        self.latest_image_raw = None
+        self.viewport_lock = threading.Lock()
+        self.viewport_image = None
     
     def shutdown(self):
         if rclpy.ok():
@@ -119,6 +188,33 @@ class ScoutCamera(Node):
         except TransformException:
             self.get_logger().debug("Waiting for TF tree...")
             
+    def convert_image(self, msg):
+        try:
+            if msg.encoding == "rgb8":
+                img_array = np.frombuffer(msg.data, dtype=np.uint8)
+                img_array = img_array.reshape((msg.height, msg.width, 3))
+                return cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
+            elif msg.encoding == "bgr8":
+                img_array = np.frombuffer(msg.data, dtype=np.uint8)
+                return img_array.reshape((msg.height, msg.width, 3))
+
+            elif msg.encoding == "mono8":
+                img_array = np.frombuffer(msg.data, dtype=np.uint8)
+                return img_array.reshape((msg.height, msg.width))
+
+            elif msg.encoding == "16UC1":
+                img_array = np.frombuffer(msg.data, dtype=np.uint16)
+                return img_array.reshape((msg.height, msg.width))
+
+            else:
+                self.get_logger().warn(f"Unsupported encoding: {msg.encoding}")
+                return None
+
+        except Exception as e:
+            self.get_logger().error(f"Failed to convert image: {e}")
+            return None
+
     def create_scan_pose(self, pose_in):
         global NEXT_ID
         while rclpy.ok():
@@ -195,7 +291,14 @@ class ScoutCamera(Node):
                     newScan = True
 
         if newScan:
+            with self.image_lock:
+                local_image = self.latest_image_raw
+            if local_image is None:
+                return
             self.get_logger().info("Scanning here!")
+            results = self.apple_model(local_image, verbose=False)
+
+            self.process_results(results)
             self.last_scan_time = time.time()
             # Example PoseStamped in base_link frame
             pose_in = PoseStamped()
@@ -233,15 +336,8 @@ class ScoutCamera(Node):
                 self.pose_list.remove(scan_pose)
 
     def image_callback(self, msg):
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                "map",
-                msg.header.frame_id,
-                rclpy.time.Time()     
-            )
-        except TransformException:
-            self.get_logger().debug("Waiting for TF tree...")
-            return
+        with self.image_lock:
+            self.latest_image_raw = self.convert_image(msg)    
 
         
     def pose_in_ws(self, pose: PoseStamped):
@@ -272,6 +368,297 @@ class ScoutCamera(Node):
                 return True, ws.critical
 
         return False, False
+
+    def process_results(self, results):
+        if results is None:
+            return
+        local_results = results[0]
+        mask = local_results.boxes.conf > CONFIDENCE_THRESHOLD
+        filtered_boxes = local_results.boxes[mask]
+        if len(filtered_boxes) == 0:
+            return
+        local_results.boxes = filtered_boxes
+        # Minimum covering circles for boxes
+        xyxy = filtered_boxes.xyxy
+
+        rectangles = [tuple(box.tolist()) for box in filtered_boxes.xyxy[:64]]
+
+        try:
+            self.search_request_queue.put_nowait(rectangles)
+        except Full:
+            self.get_logger().debug(
+                "Search worker busy; skipping search"
+            )
+
+        with self.viewport_lock:
+            self.viewport_image = local_results.plot()
+
+    def check_search_results(self):
+        try:
+            result = self.search_result_queue.get_nowait()
+        except Empty:
+            return
+
+        if isinstance(result, Exception):
+            self.get_logger().error(
+                f"Search process failed: {result}"
+            )
+            return
+
+        if not result:
+            self.get_logger().warn(
+                "Search failed to find a solution"
+            )
+            return
+
+        with self.viewport_lock:
+            print(len(result))
+            for circle in result:
+                cv2.circle(self.viewport_image, (int(circle[0]), int(circle[1])), circle[2], (0,255,0),3)
+            
+            x_max, y_max = self.viewport_image.shape[:2]
+            x1 = int(max(min(circle[0] for circle in result) - RADIUS - 40, 0))
+            y1 = int(max(min(circle[1] for circle in result) - RADIUS - 40, 0))
+            x2 = int(min(max(circle[0] for circle in result) + RADIUS + 40, x_max))
+            y2 = int(min(max(circle[1] for circle in result) + RADIUS + 40, y_max))
+
+
+            self.viewport_image = self.viewport_image[y1:y2, x1:x2]
+
+
+
+
+def search_process_main(request_queue, result_queue):
+    while True:
+        rectangles = request_queue.get()
+
+        if rectangles is None:
+            break
+
+        try:
+            result = search_worker_main(rectangles)
+            result_queue.put(result)
+        except Exception as e:
+            result_queue.put(e)
+
+def search_worker_main(rectangles):
+    coverage_mask = complete_coverage_mask(rectangles)
+
+    # ------------------------------------------------------------
+    # Generate candidate circles.
+    #
+    # Deduplicate based on coverage, since two circles producing
+    # the exact same coverage are equivalent to the search.
+    # ------------------------------------------------------------
+
+    candidates = []
+    candidate_coverages = set()
+
+    for rectangle_pair in combinations(rectangles, 2):
+        circles = circles_from_rectangle(
+            rectangle_pair[0],
+            rectangle_pair[1],
+            RADIUS
+        )
+
+        for circle in circles:
+            if circle is None:
+                continue
+
+            coverage = compute_coverage(circle, rectangles)
+
+            if coverage == 0:
+                continue
+
+            if coverage in candidate_coverages:
+                continue
+
+            candidate_coverages.add(coverage)
+            candidates.append((circle, coverage))
+
+    for rectangle in rectangles:
+        for point in rectangle_corners(rectangle):
+            circle = (point[0], point[1], RADIUS)
+            coverage = compute_coverage(circle, rectangles)
+
+            if coverage == 0:
+                continue
+
+            if coverage in candidate_coverages:
+                continue
+
+            candidate_coverages.add(coverage)
+            candidates.append((circle, coverage))
+
+    print(f"Generated {len(candidates)} candidates")
+
+    # ------------------------------------------------------------
+    # Search states
+    # ------------------------------------------------------------
+
+    coverage_states = {
+        0: []
+    }
+
+    current_states = {
+        0: []
+    }
+
+    for depth in range(MAX_DEPTH_SEARCH):
+
+        print(f"Search at depth {depth}")
+
+        next_states = {}
+
+        for coverage, state in current_states.items():
+
+            # ----------------------------------------------------
+            # Rank candidates relative to THIS state.
+            # ----------------------------------------------------
+
+            ranked_candidates = []
+
+            for circle, candidate_coverage in candidates:
+
+                new_coverage = coverage | candidate_coverage
+
+                if new_coverage == coverage:
+                    continue
+
+                score = heuristic_method(new_coverage)
+
+                ranked_candidates.append(
+                    (score, circle, candidate_coverage)
+                )
+
+            # Best candidates first
+            ranked_candidates.sort(
+                key=lambda candidate: candidate[0],
+                reverse=True
+            )
+
+            # ----------------------------------------------------
+            # Only expand the best MAX_WIDTH_SEARCH candidates.
+            # ----------------------------------------------------
+
+            for score, circle, candidate_coverage in ranked_candidates[
+                :MAX_WIDTH_SEARCH
+            ]:
+
+                new_coverage = coverage | candidate_coverage
+
+                new_state = state + [circle]
+
+                # We already found this coverage with fewer
+                # circles, so this state cannot improve anything.
+                if new_coverage in coverage_states:
+                    if len(new_state) >= len(
+                        coverage_states[new_coverage]
+                    ):
+                        continue
+
+                coverage_states[new_coverage] = new_state
+                next_states[new_coverage] = new_state
+
+                if new_coverage == coverage_mask:
+                    print(
+                        f"Found solution at depth {depth + 1}"
+                    )
+                    return new_state
+
+        current_states = next_states
+
+        if not current_states:
+            print("Search exhausted")
+            break
+
+    print("Failed to find solution!")
+    return []
+
+def heuristic_method(coverage):
+    return coverage.bit_count()
+
+def complete_coverage_mask(rectangles):
+    count = min(len(rectangles), 64)
+    return (1 << count) - 1
+
+def is_in_circle(circle, rectangle):
+    cx, cy, r = circle
+    corners = rectangle_corners(rectangle)
+
+    r_squared = r * r
+
+    return any(
+        (x - cx) ** 2 + (y - cy) ** 2 <= r_squared
+        for x, y in corners
+    )
+
+def rectangle_corners(rectangle):
+    x1, y1, x2, y2 = rectangle
+
+    x1, x2 = min(x1, x2), max(x1, x2)
+    y1, y2 = min(y1, y2), max(y1, y2)
+
+    return [
+        (x1, y1),
+        (x1, y2),
+        (x2, y1),
+        (x2, y2)
+    ]
+
+def circles_from_rectangle(r1, r2, r):
+    corners1 = rectangle_corners(r1)
+    corners2 = rectangle_corners(r2)
+
+    candidates = []
+
+    for p1, p2 in product(corners1, corners2):
+        circle1, circle2 = circles_from_p1p2r(p1, p2, r)
+
+        if circle1 is not None:
+            candidates.append(circle1)
+
+        if circle2 is not None:
+            candidates.append(circle2)
+
+    return candidates
+
+def circles_from_p1p2r(p1, p2, r):
+    'Following explanation at http://mathforum.org/library/drmath/view/53027.html'
+    (x1, y1), (x2, y2) = p1, p2
+    if p1 == p2:
+        #raise ValueError('coincident points gives infinite number of Circles')
+        return None, None
+    # delta x, delta y between points
+    dx, dy = x2 - x1, y2 - y1
+    # dist between points
+    q = sqrt(dx**2 + dy**2)
+    if q > 2.0*r:
+        #raise ValueError('separation of points > diameter')
+        return None, None
+    # halfway point
+    x3, y3 = (x1+x2)/2, (y1+y2)/2
+    # distance along the mirror line
+    d = sqrt(r**2-(q/2)**2)
+    # One answer
+    c1 = (x3 - d*dy/q,
+            y3 + d*dx/q,
+            abs(r))
+    # The other answer
+    c2 = (x3 + d*dy/q,
+            y3 - d*dx/q,
+            abs(r))
+    return c1, c2
+
+def compute_coverage(circle, rectangles):
+    coverage = 0
+
+    for i, rectangle in enumerate(rectangles[:64]):
+        if is_in_circle(circle, rectangle):
+            coverage |= 1 << i
+
+    return coverage
+
 
 def main(args=None):
     global robot_workspaces
@@ -320,15 +707,20 @@ def main(args=None):
     # Add node to executor
     executor.add_node(node)
 
+    cv2.namedWindow("Camera View", cv2.WINDOW_NORMAL)
     try:
         while rclpy.ok():
             executor.spin_once()
+            if node.viewport_image is not None:
+                cv2.imshow("Camera View", node.viewport_image)
+            cv2.waitKey(1)
     except KeyboardInterrupt:
         node.shutdown()
     finally:
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()

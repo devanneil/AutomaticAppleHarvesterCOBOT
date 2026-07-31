@@ -66,7 +66,7 @@ class DynamicTFPublisher(Node):
     def move_service_callback(self, request, response):
         with self.target_pose_lock:
             self.target_pose = copy.deepcopy(self.current_pose)
-            self.target_pose.pose.position.y += 1.647/2
+            self.target_pose.pose.position.y += 1.3462/2
         response.success = True
         return response
 
