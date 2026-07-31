@@ -133,6 +133,15 @@ def generate_launch_description():
 
     with open(urdf_file, "r") as f:
         robot_description = f.read()
+
+    urdf_file = os.path.join(
+        models_share,
+        "urdf",
+        "robot_workspace.urdf"
+    )
+
+    with open(urdf_file, "r") as f:
+        workspace_descritpion = f.read()
     ld = LaunchDescription()
 
     # -----------------------------
@@ -266,6 +275,17 @@ def generate_launch_description():
             package="bin_manager",
             executable="bin_manager",
             parameters=[sys_config],
+        )
+    )
+
+    ld.add_action(
+        Node(
+            package="robot_state_publisher",
+            executable="robot_state_publisher",
+            namespace="arm_1_workspace",
+            parameters=[{
+                    "robot_description": workspace_descritpion
+                }]
         )
     )
 
