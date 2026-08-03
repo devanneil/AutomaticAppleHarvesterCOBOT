@@ -10,7 +10,7 @@ from std_msgs.msg import Int32
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray
 
-from apple_interfaces.srv import ScanPose
+from apple_interfaces.srv import ScanPoseRequest
 from apple_interfaces.action import VisionScan
 
 from dataclasses import dataclass
@@ -27,7 +27,7 @@ import multiprocessing
 import xml.etree.ElementTree as ET
 from ament_index_python.packages import get_package_share_directory
 from multiprocessing import Process, Queue
-from queue import Empty
+from queue import Empty, Full
 
 from ultralytics import YOLO
 from itertools import combinations, product
@@ -150,7 +150,7 @@ class ScoutCamera(Node):
             '/scout1_cam/clear_pose',
             self.clear_callback,
             10,
-            callback_group=self.control_group
+            callback_group=self.camera_group
         )
 
         self.pose_timer = self.create_timer(
@@ -169,8 +169,16 @@ class ScoutCamera(Node):
             10
         )
 
+        self.scan_pose_service = self.create_service(
+            ScanPoseRequest,
+            "/scout1_cam/scan_pose_request",
+            self.service_callback,
+            callback_group=self.control_group
+        )
+
 
         self.pose_list = []
+        self.pose_list_lock = threading.Lock()
         self.last_scan_time = Time(seconds=0, nanoseconds=0, clock_type=self.get_clock().clock_type)
         self.image_lock = threading.Lock()
         self.latest_image_raw = None
@@ -257,10 +265,11 @@ class ScoutCamera(Node):
 
                 scan_pose = ScanPose(pose_stamped_out, NEXT_ID, False)
                 NEXT_ID += 1
-                self.pose_list.append(scan_pose)
+                with self.pose_list_lock:
+                    self.pose_list.append(scan_pose)
                 return
             except TransformException:
-                self.get_logger().debug("Waiting for TF tree...")
+                self.get_logger().warn("Waiting for TF tree...")
             finally:
                 rate = self.create_rate(2, self.get_clock())
                 rate.sleep()
@@ -322,7 +331,7 @@ class ScoutCamera(Node):
                         self.get_logger().debug("Waiting for TF tree...")
                         return
                     pose_out = do_transform_pose(left_pose.pose, transform)
-                    if pose_out.position.z < -MAX_RIGHT_SCAN: #Right -> -z
+                    if pose_out.position.y > MAX_RIGHT_SCAN: #Right -> +y
                         newScan = True
 
             if newScan:
@@ -336,6 +345,7 @@ class ScoutCamera(Node):
 
                 self.process_results(results)
                 self.last_scan_time = self.get_clock().now()
+                self.get_logger().info("Scan Created")
             # Example PoseStamped in base_link frame
             # pose_in = PoseStamped()
             # pose_in.header.frame_id = self.frame_id
@@ -351,17 +361,22 @@ class ScoutCamera(Node):
             # self.create_scan_pose(pose_in)
 
     def get_leftmost_scan(self):
-        if len(self.pose_list) > 0:
+        with self.pose_list_lock:
+            pose_list = self.pose_list
+        if len(pose_list) > 0:
             return max(
-                self.pose_list,
+                pose_list,
                 key=lambda scan: scan.pose.pose.position.y
             )
         else:
             return None
-    def get_rightmost_scan(self):
-        if len(self.pose_list) > 0:
+    def get_rightmost_scan(self, pose_list=None):
+        if pose_list is None:
+            with self.pose_list_lock:
+                pose_list = self.pose_list
+        if len(pose_list) > 0:
             return min(
-                self.pose_list,
+                pose_list,
                 key=lambda scan: scan.pose.pose.position.y
             )
         else:
@@ -369,7 +384,9 @@ class ScoutCamera(Node):
     def clear_callback(self, msg):
         for scan_pose in self.pose_list:
             if msg.data == scan_pose.ID:
-                self.pose_list.remove(scan_pose)
+                with self.pose_list_lock:
+                    self.pose_list.remove(scan_pose)
+                self.get_logger().info(f"Removed pose: {scan_pose.ID}")
 
     def image_callback(self, msg):
         with self.image_lock:
@@ -386,7 +403,7 @@ class ScoutCamera(Node):
 
         self.get_logger().info("Successfully collected camera info!")
         
-    def pose_in_ws(self, pose: PoseStamped):
+    def pose_in_ws(self, pose: PoseStamped, arm_id=None):
         global robot_workspaces
         try:
             transform = self.tf_buffer.lookup_transform(
@@ -403,9 +420,13 @@ class ScoutCamera(Node):
         y_base = pose_out.position.y
         z_base = pose_out.position.z
 
-        for ws in robot_workspaces:
-            y = y_base - ws.origin[1] + ws.area[0] / 2
-            z = z_base - ws.origin[2] + ws.area[1] / 2
+        if arm_id is None:
+            valid_ws = robot_workspaces
+        else:
+            valid_ws = [ws for ws in robot_workspaces if ws.arm_ID == arm_id]
+        for ws in valid_ws:
+            y = y_base - ws.origin[1]
+            z = z_base - ws.origin[2]
 
             if (
                 0 <= y < ws.area[0]
@@ -458,7 +479,6 @@ class ScoutCamera(Node):
             return
 
         with self.viewport_lock:
-            print(len(result))
             for circle in result:
                 cv2.circle(self.viewport_image, (int(circle[0]), int(circle[1])), circle[2], (0,255,0),3)
             
@@ -470,7 +490,7 @@ class ScoutCamera(Node):
 
 
             # self.viewport_image = self.viewport_image[y1:y2, x1:x2]
-        
+        self.get_logger().info("Processing scan results")
         for circle in result:
             u, v, _ = circle
             z = SCAN_PLANE_DISTANCE
@@ -490,6 +510,35 @@ class ScoutCamera(Node):
 
             self.create_scan_pose(pose_in)
         self.scan_busy = False
+        self.get_logger().info("Scan results available")
+
+    def service_callback(self, request, response):
+        valid_poses = []
+        self.get_logger().info(f"{len(self.pose_list)} scan poses remain!")
+        for scan_pose in self.pose_list:
+            in_ws, critical = self.pose_in_ws(scan_pose.pose, request.arm_num)
+            if critical:
+                response.header = scan_pose.pose.header
+                response.pose = scan_pose.pose
+                response.id = scan_pose.ID
+                response.success = True
+                return response
+            if in_ws:
+                valid_poses.append(scan_pose)
+        result = self.get_rightmost_scan(valid_poses)
+        if result is not None:
+            response.header = result.pose.header
+            response.pose = result.pose
+            response.id = result.ID
+            response.success = True
+            return response
+        
+        response.success = False
+        response.id = 0
+        return response
+        
+            
+
 
 
 
@@ -767,7 +816,7 @@ def main(args=None):
     node = ScoutCamera()
 
     # MultiThreadedExecutor with 8 worker threads
-    executor = MultiThreadedExecutor(num_threads=5)
+    executor = MultiThreadedExecutor(num_threads=6)
 
     # Add node to executor
     executor.add_node(node)
