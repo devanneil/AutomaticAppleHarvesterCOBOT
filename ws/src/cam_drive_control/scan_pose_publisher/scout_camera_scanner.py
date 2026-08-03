@@ -1,4 +1,5 @@
 import rclpy
+from rclpy.time import Time
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
@@ -6,7 +7,7 @@ from rclpy.duration import Duration
 from tf2_ros import Buffer, TransformListener, TransformException
 from tf2_geometry_msgs import do_transform_pose
 from std_msgs.msg import Int32
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray
 
 from apple_interfaces.srv import ScanPose
@@ -50,8 +51,8 @@ robot_workspaces = []
 
 GOAL_RADIUS = VisionScan.Goal.RADIUS # pixels
 TIME_BETWEEN_SCAN = 5 # seconds
-MAX_RIGHT_SCAN = 0.7 # meters
-SCAN_PLANE_DISTANCE = 1.643 # meters between scout camera and scanning plane
+MAX_RIGHT_SCAN = 1.3462/2 # meters
+SCAN_PLANE_DISTANCE = 1.859 # meters between scout camera and scanning plane
 CAM_TO_WALL_DISTANCE = 0.1 # meters between arm camera and scanning plane
 MAX_POSES_IN_WS = 10
 CONFIDENCE_THRESHOLD = 0.85
@@ -120,36 +121,47 @@ class ScoutCamera(Node):
         self.tf_ready = False
         self.tf_timer = self.create_timer(0.2, self.check_tf_ready)
 
-        self.group_1 = MutuallyExclusiveCallbackGroup()
+        self.control_group = MutuallyExclusiveCallbackGroup()
+        self.camera_group = MutuallyExclusiveCallbackGroup()
 
         self.camera_sn = "GDS871PBAA7110753"
-        self.frame_id = "scout_link"
+        self.frame_id = None
         # Create a subscriber to the /camera/image_raw topic
         self.camera_subscription = self.create_subscription(
             Image,
             f'/scout1_cam/{self.camera_sn}/color/image_raw', 
             self.image_callback,
             10,
-            callback_group=self.group_1
+            callback_group=self.camera_group
         )
+
+        # Create a subscriber to the /camera/image_raw topic
+        self.camera_subscription = self.create_subscription(
+            CameraInfo,
+            f'/scout1_cam/{self.camera_sn}/color/camera_info',
+            self.cam_info_callback,
+            10,
+            callback_group=self.camera_group
+        )
+
 
         self.clear_subscription = self.create_subscription(
             Int32,
             '/scout1_cam/clear_pose',
             self.clear_callback,
             10,
-            callback_group=self.group_1
+            callback_group=self.control_group
         )
 
         self.pose_timer = self.create_timer(
             0.1,
             self.control_loop,
-            callback_group=self.group_1
+            callback_group=self.control_group
         )
         self.results_timer = self.create_timer(
             0.1,
             self.check_search_results,
-            callback_group=self.group_1
+            callback_group=self.control_group
         )
         self.pose_publisher = self.create_publisher(
             PoseArray,
@@ -159,17 +171,27 @@ class ScoutCamera(Node):
 
 
         self.pose_list = []
-        self.last_scan_time = 0
+        self.last_scan_time = Time(seconds=0, nanoseconds=0, clock_type=self.get_clock().clock_type)
         self.image_lock = threading.Lock()
         self.latest_image_raw = None
         self.viewport_lock = threading.Lock()
         self.viewport_image = None
+        self.scan_busy = False
+
+        self.fx = None
+        self.fy = None
+        self.cx = None
+        self.cy = None
     
     def shutdown(self):
         if rclpy.ok():
             rclpy.shutdown()    
         
     def check_tf_ready(self):
+        if self.frame_id is None:
+            rate = self.create_rate(2, self.get_clock())
+            rate.sleep()
+            return
         if self.tf_ready:
             return
 
@@ -222,7 +244,7 @@ class ScoutCamera(Node):
                 transform = self.tf_buffer.lookup_transform(
                     "map",
                     self.frame_id,
-                    rclpy.time.Time()     
+                    pose_in.header.stamp  
                 )
 
                 pose_out = do_transform_pose(pose_in.pose, transform)
@@ -231,6 +253,7 @@ class ScoutCamera(Node):
                 pose_stamped_out.header.frame_id = 'map'
                 pose_stamped_out.header.stamp = self.get_clock().now().to_msg()  
                 pose_stamped_out.pose = pose_out
+                pose_stamped_out.pose.position.z += 0.4
 
                 scan_pose = ScanPose(pose_stamped_out, NEXT_ID, False)
                 NEXT_ID += 1
@@ -243,9 +266,20 @@ class ScoutCamera(Node):
                 rate.sleep()
 
     def control_loop(self):
+        while rclpy.ok():
+            if self.cx is None:
+                self.get_logger().warn("Waiting for Camera intrinsics", throttle_duration_sec=5.0)
+                rate = self.create_rate(2, self.get_clock())
+                rate.sleep()
+            elif self.latest_image_raw is None:
+                self.get_logger().warn("Waiting for Camera image", throttle_duration_sec=5.0)
+                rate = self.create_rate(2, self.get_clock())
+                rate.sleep()
+            else:
+                break
         if not self.tf_ready:
             return False
-        now = time.time()
+        now = self.get_clock().now()
         newScan = False
         pa = PoseArray()
         pa.header.stamp = self.get_clock().now().to_msg()
@@ -263,56 +297,58 @@ class ScoutCamera(Node):
                 pose_ws_count += 1  
         self.pose_publisher.publish(pa)  
 
-        if state_critical:
-            self.get_logger().warn("Do not move here, critical poses to be cleared!", throttle_duration_sec=5.0)
-        else:
-            if pose_ws_count < MAX_POSES_IN_WS: 
-                self.get_logger().warn("Move forward by one pane!", throttle_duration_sec=5.0)
+        if not self.scan_busy:
+            if state_critical:
+                self.get_logger().warn("Do not move here, critical poses to be cleared!", throttle_duration_sec=5.0)
             else:
-                self.get_logger().warn("Too many scans to be cleared, don't move yet!", throttle_duration_sec=5.0)
+                if pose_ws_count < MAX_POSES_IN_WS: 
+                    self.get_logger().warn("Move forward by one pane!", throttle_duration_sec=5.0)
+                else:
+                    self.get_logger().warn("Too many scans to be cleared, don't move yet!", throttle_duration_sec=5.0)
         
-        if now - self.last_scan_time > TIME_BETWEEN_SCAN:
-            left_scan = self.get_leftmost_scan()
-            if left_scan is None:
-                newScan = True
-            else:
-                left_pose = left_scan.pose
-                try:
-                    transform = self.tf_buffer.lookup_transform(
-                        self.frame_id,
-                        "map",
-                        rclpy.time.Time()     
-                    )
-                except TransformException:
-                    self.get_logger().debug("Waiting for TF tree...")
-                    return
-                pose_out = do_transform_pose(left_pose.pose, transform)
-                if pose_out.position.z < -MAX_RIGHT_SCAN: #Right -> -z
+            if (now.nanoseconds - self.last_scan_time.nanoseconds)/(10**9) > TIME_BETWEEN_SCAN:
+                left_scan = self.get_leftmost_scan()
+                if left_scan is None:
                     newScan = True
+                else:
+                    left_pose = left_scan.pose
+                    try:
+                        transform = self.tf_buffer.lookup_transform(
+                            self.frame_id,
+                            "map",
+                            rclpy.time.Time()     
+                        )
+                    except TransformException:
+                        self.get_logger().debug("Waiting for TF tree...")
+                        return
+                    pose_out = do_transform_pose(left_pose.pose, transform)
+                    if pose_out.position.z < -MAX_RIGHT_SCAN: #Right -> -z
+                        newScan = True
 
-        if newScan:
-            with self.image_lock:
-                local_image = self.latest_image_raw
-            if local_image is None:
-                return
-            self.get_logger().info("Scanning here!")
-            results = self.apple_model(local_image, verbose=False)
+            if newScan:
+                with self.image_lock:
+                    local_image = self.latest_image_raw
+                if local_image is None:
+                    return
+                self.get_logger().info("Scanning here!")
+                self.scan_busy = True
+                results = self.apple_model(local_image, verbose=False)
 
-            self.process_results(results)
-            self.last_scan_time = time.time()
+                self.process_results(results)
+                self.last_scan_time = self.get_clock().now()
             # Example PoseStamped in base_link frame
-            pose_in = PoseStamped()
-            pose_in.header.frame_id = self.frame_id
-            pose_in.header.stamp = self.get_clock().now().to_msg()
-            pose_in.pose.position.x = 0.0
-            pose_in.pose.position.y = SCAN_PLANE_DISTANCE
-            pose_in.pose.position.z = 0.0
-            pose_in.pose.orientation.x = 0.0
-            pose_in.pose.orientation.y = 0.0
-            pose_in.pose.orientation.z = 0.0
-            pose_in.pose.orientation.w = 1.0
+            # pose_in = PoseStamped()
+            # pose_in.header.frame_id = self.frame_id
+            # pose_in.header.stamp = self.last_scan_time.to_msg()
+            # pose_in.pose.position.x = 0.0
+            # pose_in.pose.position.y = 0.0
+            # pose_in.pose.position.z = SCAN_PLANE_DISTANCE
+            # pose_in.pose.orientation.x = 0.0
+            # pose_in.pose.orientation.y = 0.0
+            # pose_in.pose.orientation.z = 0.0
+            # pose_in.pose.orientation.w = 1.0
 
-            self.create_scan_pose(pose_in)
+            # self.create_scan_pose(pose_in)
 
     def get_leftmost_scan(self):
         if len(self.pose_list) > 0:
@@ -339,6 +375,16 @@ class ScoutCamera(Node):
         with self.image_lock:
             self.latest_image_raw = self.convert_image(msg)    
 
+    def cam_info_callback(self, msg):
+        if self.cx is not None:
+            return
+        self.frame_id = msg.header.frame_id
+        self.fx = msg.k[0]
+        self.fy = msg.k[4]
+        self.cx = msg.k[2]
+        self.cy = msg.k[5]
+
+        self.get_logger().info("Successfully collected camera info!")
         
     def pose_in_ws(self, pose: PoseStamped):
         global robot_workspaces
@@ -416,15 +462,34 @@ class ScoutCamera(Node):
             for circle in result:
                 cv2.circle(self.viewport_image, (int(circle[0]), int(circle[1])), circle[2], (0,255,0),3)
             
-            x_max, y_max = self.viewport_image.shape[:2]
-            x1 = int(max(min(circle[0] for circle in result) - RADIUS - 40, 0))
-            y1 = int(max(min(circle[1] for circle in result) - RADIUS - 40, 0))
-            x2 = int(min(max(circle[0] for circle in result) + RADIUS + 40, x_max))
-            y2 = int(min(max(circle[1] for circle in result) + RADIUS + 40, y_max))
+            # x_max, y_max = self.viewport_image.shape[:2]
+            # x1 = int(max(min(circle[0] for circle in result) - RADIUS - 40, 0))
+            # y1 = int(max(min(circle[1] for circle in result) - RADIUS - 40, 0))
+            # x2 = int(min(max(circle[0] for circle in result) + RADIUS + 40, x_max))
+            # y2 = int(min(max(circle[1] for circle in result) + RADIUS + 40, y_max))
 
 
-            self.viewport_image = self.viewport_image[y1:y2, x1:x2]
+            # self.viewport_image = self.viewport_image[y1:y2, x1:x2]
+        
+        for circle in result:
+            u, v, _ = circle
+            z = SCAN_PLANE_DISTANCE
+            x = (u - self.cx) * z / self.fx
+            y = (v - self.cy) * z / self.fy
 
+            pose_in = PoseStamped()
+            pose_in.header.frame_id = self.frame_id
+            pose_in.header.stamp = self.last_scan_time.to_msg()
+            pose_in.pose.position.x = -x
+            pose_in.pose.position.y = -y
+            pose_in.pose.position.z = SCAN_PLANE_DISTANCE
+            pose_in.pose.orientation.x = 0.0
+            pose_in.pose.orientation.y = 0.0
+            pose_in.pose.orientation.z = 0.0
+            pose_in.pose.orientation.w = 1.0
+
+            self.create_scan_pose(pose_in)
+        self.scan_busy = False
 
 
 
@@ -702,7 +767,7 @@ def main(args=None):
     node = ScoutCamera()
 
     # MultiThreadedExecutor with 8 worker threads
-    executor = MultiThreadedExecutor(num_threads=4)
+    executor = MultiThreadedExecutor(num_threads=5)
 
     # Add node to executor
     executor.add_node(node)
