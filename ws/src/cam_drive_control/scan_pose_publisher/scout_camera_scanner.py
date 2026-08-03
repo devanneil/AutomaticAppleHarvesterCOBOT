@@ -180,6 +180,7 @@ class ScoutCamera(Node):
         self.pose_list = []
         self.pose_list_lock = threading.Lock()
         self.last_scan_time = Time(seconds=0, nanoseconds=0, clock_type=self.get_clock().clock_type)
+        self.last_scan_tf = None
         self.image_lock = threading.Lock()
         self.latest_image_raw = None
         self.viewport_lock = threading.Lock()
@@ -247,32 +248,20 @@ class ScoutCamera(Node):
 
     def create_scan_pose(self, pose_in):
         global NEXT_ID
-        while rclpy.ok():
-            try:
-                transform = self.tf_buffer.lookup_transform(
-                    "map",
-                    self.frame_id,
-                    pose_in.header.stamp  
-                )
 
-                pose_out = do_transform_pose(pose_in.pose, transform)
+        pose_out = do_transform_pose(pose_in.pose, self.last_scan_tf)
 
-                pose_stamped_out = PoseStamped()
-                pose_stamped_out.header.frame_id = 'map'
-                pose_stamped_out.header.stamp = self.get_clock().now().to_msg()  
-                pose_stamped_out.pose = pose_out
-                pose_stamped_out.pose.position.z += 0.4
+        pose_stamped_out = PoseStamped()
+        pose_stamped_out.header.frame_id = 'map'
+        pose_stamped_out.header.stamp = self.get_clock().now().to_msg()  
+        pose_stamped_out.pose = pose_out
+        pose_stamped_out.pose.position.z += 0.4
 
-                scan_pose = ScanPose(pose_stamped_out, NEXT_ID, False)
-                NEXT_ID += 1
-                with self.pose_list_lock:
-                    self.pose_list.append(scan_pose)
-                return
-            except TransformException:
-                self.get_logger().warn("Waiting for TF tree...")
-            finally:
-                rate = self.create_rate(2, self.get_clock())
-                rate.sleep()
+        scan_pose = ScanPose(pose_stamped_out, NEXT_ID, False)
+        NEXT_ID += 1
+        with self.pose_list_lock:
+            self.pose_list.append(scan_pose)
+        return
 
     def control_loop(self):
         while rclpy.ok():
@@ -344,7 +333,26 @@ class ScoutCamera(Node):
                 results = self.apple_model(local_image, verbose=False)
 
                 self.process_results(results)
-                self.last_scan_time = self.get_clock().now()
+                self.last_scan_time = rclpy.time.Time()
+                while rclpy.ok():
+                    try:
+                        self.last_scan_tf = self.tf_buffer.lookup_transform(
+                                    "map",
+                                    self.frame_id,
+                                    self.last_scan_time  
+                                )
+                        break
+                    except TransformException as e:
+                        self.get_logger().warn(
+                            f"TF lookup failed: "
+                            f"target='map', "
+                            f"source='{self.frame_id}', "
+                            f"stamp={self.last_scan_time.to_msg().sec}.{self.last_scan_time.to_msg().nanosec}: "
+                            f"{e}"
+                        )
+                        rate = self.create_rate(2, self.get_clock())
+                        rate.sleep()
+
                 self.get_logger().info("Scan Created")
             # Example PoseStamped in base_link frame
             # pose_in = PoseStamped()
@@ -821,13 +829,22 @@ def main(args=None):
     # Add node to executor
     executor.add_node(node)
 
-    cv2.namedWindow("Camera View", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("Scout Camera View", cv2.WINDOW_NORMAL)
     try:
         while rclpy.ok():
             executor.spin_once()
             if node.viewport_image is not None:
-                cv2.imshow("Camera View", node.viewport_image)
-            cv2.waitKey(1)
+                cv2.imshow("Scout Camera View", node.viewport_image)
+
+            key = cv2.waitKey(10) & 0xFF
+
+            if key == 27:
+                rclpy.shutdown()
+                break
+
+            if cv2.getWindowProperty("Scout Camera View", cv2.WND_PROP_VISIBLE) < 1:
+                rclpy.shutdown()
+                break
     except KeyboardInterrupt:
         node.shutdown()
     finally:
