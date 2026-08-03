@@ -43,4 +43,9 @@ def generate_launch_description():
             package='cam_drive_control',
             executable='scout_camera_scanner'
         ),
+
+        Node(
+            package='suction_commander',
+            executable='suction_commander'
+        )
     ])

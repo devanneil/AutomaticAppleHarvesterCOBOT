@@ -91,7 +91,15 @@ class SuctionCommander : public rclcpp::Node
 public:
     SuctionCommander() : Node("suction_commander")
     {
-        serial.openPort("/dev/ttyUSB0", 115200);
+        while (rclcpp::ok())
+        {
+            if(serial.openPort("/dev/ttyUSB0", 115200))
+            {
+                break;
+            }
+            RCLCPP_WARN(get_logger(), "Unable to open serial port!");
+            rclcpp::sleep_for(std::chrono::seconds(5));
+        }
 
         _service = this->create_service<apple_interfaces::srv::SuctionCommand>(
             "suction_action",
@@ -102,6 +110,7 @@ public:
             "/suction_state", 10);
 
         reader_thread = std::thread(&SuctionCommander::readLoop, this);
+        RCLCPP_INFO(get_logger(), "Suction commander successfuly initialized!");
     }
     ~SuctionCommander() {
         serial.writePacket(0xAA, 0);
