@@ -7,12 +7,15 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2/exceptions.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_msgs/msg/u_int8.hpp>
+#include <std_msgs/msg/u_int32.hpp>
 #include "apple_interfaces/srv/suction_command.hpp"
 #include "apple_interfaces/srv/update_bin.hpp"
+#include "apple_interfaces/srv/scan_pose_request.hpp"
 #include "apple_interfaces/action/vision_scan.hpp"
 
 #include <moveit/move_group_interface/move_group_interface.h>
@@ -83,6 +86,8 @@ private:
 
     void updateBinPose(geometry_msgs::msg::PoseStamped qr_pose);
 
+    void getScanPose();
+
     bool block;
 
     geometry_msgs::msg::PoseStamped getNextPose();
@@ -112,10 +117,14 @@ private:
 
     rclcpp::Client<apple_interfaces::srv::UpdateBin>::SharedPtr bin_manager_client_;
 
+    rclcpp::Client<apple_interfaces::srv::ScanPoseRequest>::SharedPtr scan_pose_client_;
+    rclcpp::Publisher<std_msgs::msg::UInt32>::SharedPtr scan_pose_clear_pub_;
+
     int vacuum_consensus_count_ = 0;
     uint8_t latest_vacuum_state_ = 0;
     mutable std::mutex context_mutex_;
-    bool suction_running_;
+    bool suction_running_ = false;
+    int last_scan_ID = 0;
     rclcpp::TimerBase::SharedPtr vacuum_timer_;
     std::chrono::steady_clock::time_point last_suction_;
     std::chrono::steady_clock::duration suction_timeout_ = std::chrono::seconds(5);

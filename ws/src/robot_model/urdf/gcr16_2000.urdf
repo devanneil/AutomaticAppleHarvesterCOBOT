@@ -258,9 +258,9 @@
     </visual>
     <!-- COLLISION -->
     <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <origin rpy="0 0 0" xyz="0.0508 0 0.1016"/>
       <geometry>
-        <mesh filename="package://robot_model/meshes/End_Effector_Bracket_4.2.2026.stl" scale="0.001 0.001 0.001"/>
+        <box size="0.1778 0.3048 0.2032"/>
       </geometry>
     </collision>
   </link>
@@ -279,12 +279,6 @@
       </material>
     </visual>
     <!-- COLLISION -->
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="package://robot_model/meshes/DS87-Mechanical_Outline_3D.STP.stl" scale="0.002 0.002 0.002"/>
-      </geometry>
-    </collision>
   </link>
   <!-- ===================================================== -->
   <!-- Suction Sphere -->

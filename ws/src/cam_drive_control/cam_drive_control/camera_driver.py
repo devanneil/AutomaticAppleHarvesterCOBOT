@@ -94,6 +94,8 @@ class CameraDriver(Node):
         #==================VARIABLES===========================
         self.image_lock = threading.Lock()
         self.latest_image_raw = None
+        self.frame_lock = threading.Lock()
+        self.latest_frame = None
         self.image_count_since_last_state = 0
         self.results_lock = threading.Lock()
         self.results = None
@@ -111,7 +113,7 @@ class CameraDriver(Node):
         self.qr_message = None
         self.headless = False
         self.center_coordinates = (0, 0)
-        self.scan_radius = VisionScan.Goal.RADIUS
+        self.scan_radius = int(VisionScan.Goal.RADIUS*1.5)
         #==================USER DEPENDENT VARIABLES===========
         self.cv_lock = threading.Lock()
         self.clicked_locations = list()
@@ -121,7 +123,11 @@ class CameraDriver(Node):
         # Create a subscriber to the /camera/image_raw topic
         self.vis_sub = Subscriber(self, Image, f'/arm1_cam/{camera_sn}/color/image_raw', callback_group=self.camera_group)
         self.depth_sub = Subscriber(self, Image, f'/arm1_cam/{camera_sn}/transformedDepth/image_raw', callback_group=self.camera_group)
-        self.ts = ApproximateTimeSynchronizer([self.vis_sub, self.depth_sub], 10, 0.1)
+        self.ts = ApproximateTimeSynchronizer(
+            [self.vis_sub, self.depth_sub],
+            2,
+            0.03
+        )
         self.ts.registerCallback(self.image_callback)
         self.cam_intrinsics_sub = self.create_subscription(
             CameraInfo,
@@ -141,8 +147,14 @@ class CameraDriver(Node):
             cancel_callback=self.cancel_callback,
             callback_group=self.action_group
         )
+        self.control_timer = self.create_timer(0.1, self.control_loop, callback_group=self.camera_group)
     
-    def image_callback(self, image_msg, depth_msg):
+    def control_loop(self):
+        if self.latest_frame is None:
+            return
+        with self.frame_lock:
+            image_msg, depth_msg = self.latest_frame
+            self.latest_frame = None
         with self.image_lock:
             self.latest_image_raw = self.convert_image(image_msg)
             self.image_count_since_last_state += 1
@@ -153,6 +165,18 @@ class CameraDriver(Node):
 
         if self.mode == PerceptionMode.QR:
             self.detect_qr(self.latest_image_raw, depth_msg)
+
+
+    def image_callback(self, image_msg, depth_msg):
+        # now = self.get_clock().now()
+        # image_time = rclpy.time.Time.from_msg(image_msg.header.stamp)
+
+        # age = (now - image_time).nanoseconds / 1e9
+
+        # print(f"Image age: {age:.3f}s")
+        with self.frame_lock:
+            self.latest_frame = (image_msg, depth_msg)
+
 
         # self.get_logger().info(
         #     f"mode={self.mode} images={self.image_count_since_last_state}"
@@ -206,6 +230,17 @@ class CameraDriver(Node):
         with self.results_lock:
             self.results = iter_results[0]
 
+        depth_image = self.convert_image(depth_ros_msg)
+        try:
+            t_base_cam = self.tf_buffer.lookup_transform(
+                "base_link",
+                depth_ros_msg.header.frame_id,
+                depth_ros_msg.header.stamp
+            )
+        except TransformException:
+            self.get_logger().error("TF Error!")
+            return
+
         if not self.headless:
             for u, v in local_clicked:
 
@@ -221,17 +256,8 @@ class CameraDriver(Node):
                         # self.get_logger().info(
                         #     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
                         # )
-                        try:
-                            t_base_cam = self.tf_buffer.lookup_transform(
-                                "base_link",
-                                depth_ros_msg.header.frame_id,
-                                depth_ros_msg.header.stamp
-                            )
-                        except TransformException:
-                            self.get_logger().error("TF Error!")
-                            return
                         newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
-                            self.convert_image(depth_ros_msg), t_base_cam)
+                            depth_image, t_base_cam)
                         append = True
                         for cons in self.selected_results:
                             if consensusEqual(cons, newCons):
@@ -254,17 +280,8 @@ class CameraDriver(Node):
                     or (circle_coords_3[0]**2 + circle_coords_3[1]**2 < self.scan_radius**2)
                     or (circle_coords_4[0]**2 + circle_coords_4[1]**2 < self.scan_radius**2)):
                     if float(box.conf[0]) >= self.confidence_threshold:
-                        try:
-                            t_base_cam = self.tf_buffer.lookup_transform(
-                                "base_link",
-                                depth_ros_msg.header.frame_id,
-                                depth_ros_msg.header.stamp
-                            )
-                        except TransformException:
-                            self.get_logger().error("TF Error!")
-                            return
                         newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
-                            self.convert_image(depth_ros_msg), t_base_cam)
+                            depth_image, t_base_cam)
                         with self.selected_lock:
                             self.selected_results.append(newCons)
         
@@ -513,7 +530,7 @@ class CameraDriver(Node):
             (roi > 10) &
             (roi < 65535)
         )
-
+        
         if np.count_nonzero(valid) < 20:
             return False, None
 
@@ -692,7 +709,7 @@ class CameraDriver(Node):
         pose.header.frame_id = "base_link"
 
         # Your existing tool offset
-        pose.pose.position.x += 0.015
+        pose.pose.position.x += 0.0
         pose.pose.position.y -= 0.04
         pose.pose.position.z += 0.05
 

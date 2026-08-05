@@ -42,6 +42,10 @@ ArmController::ArmController() : Node("arm_controller")
     //     std::bind(&ArmController::controlLoop, this),
     //     timer_callback_group_
     // );
+
+    scan_pose_client_ = create_client<apple_interfaces::srv::ScanPoseRequest>("/scout1_cam/scan_pose_request");
+    scan_pose_clear_pub_ = create_publisher<std_msgs::msg::UInt32>("/scout1_cam/clear_pose", 10);
+
     context_.state = RobotState::Monitor;
     context_.planning_group = "arm_1";
     context_.last_state = std::chrono::steady_clock::now();
@@ -291,9 +295,13 @@ void ArmController::controlLoop()
             RCLCPP_INFO(get_logger(), "QR Scan command");
             createQRScan();
             break;
+        case CommandType::GetNextScanPose:
+            RCLCPP_INFO(get_logger(), "Get Next Scan Pose Command");
+            getScanPose();
+            break;
         default:
             RCLCPP_INFO(get_logger(), "No command specified!");
-            rclcpp::sleep_for(std::chrono::milliseconds(10));
+            rclcpp::sleep_for(std::chrono::milliseconds(500));
     }
     // Update context appropriately
     {
@@ -551,6 +559,10 @@ void ArmController::result_callback(
         std::lock_guard<std::mutex> ctx_lock(context_mutex_);
         context_.vision_scan_available = true;
     }
+    auto msg = std_msgs::msg::UInt32();
+    msg.data = last_scan_ID;
+    //scan_pose_clear_pub_->publish(msg);
+    last_scan_ID = 0;
 }
 
 geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
@@ -619,4 +631,62 @@ void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
             }
         };
     auto result = bin_manager_client_->async_send_request(req, response_received_callback);
+}
+
+void ArmController::getScanPose()
+{
+    {
+        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+        context_.vision_scan_available = false;
+    }
+    using ServiceResponseFuture =
+        rclcpp::Client<apple_interfaces::srv::ScanPoseRequest>::SharedFuture;
+    auto response_received_callback = [this](ServiceResponseFuture future) {
+        auto result = future.get();
+            if(result->success)
+            {   
+                geometry_msgs::msg::PoseStamped pose;
+
+                try
+                {
+                    tf_buffer_->transform(
+                        result->pose,
+                        pose,
+                        "base_link",
+                        std::chrono::seconds(2)
+                    );
+                }
+                catch (const tf2::TransformException& ex)
+                {
+                    RCLCPP_WARN(
+                        get_logger(),
+                        "Failed to transform pose: %s",
+                        ex.what()
+                    );
+                    std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+                    context_.general_command_fail = true;
+                    context_.vision_scan_available = true;
+                    return;
+                }
+                std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+                context_.target_pose = pose;
+                context_.target_pose.pose.orientation.x = -0.5;
+                context_.target_pose.pose.orientation.y = 0.5;
+                context_.target_pose.pose.orientation.z = -0.5;
+                context_.target_pose.pose.orientation.w = 0.5;
+                context_.vision_scan_available = true;
+                last_scan_ID = result->id;
+                RCLCPP_INFO(get_logger(), "Vision Scan Pose Gotten");
+            }
+            else
+            {
+                std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+                context_.general_command_fail = true;
+                context_.vision_scan_available = true;
+            }
+        };
+    auto req = std::make_shared<apple_interfaces::srv::ScanPoseRequest::Request>();
+    req->arm_num = 1;
+    auto result = scan_pose_client_->async_send_request(req, response_received_callback);
+    rclcpp::sleep_for(std::chrono::milliseconds(500));
 }

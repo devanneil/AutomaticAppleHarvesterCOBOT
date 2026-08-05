@@ -64,6 +64,7 @@ void StateMachine::changeState(RobotContext& ctx, RobotState new_state)
     ctx.state = new_state;
     ctx.last_state = std::chrono::steady_clock::now();
     ctx.step = 0;
+    ctx.general_command_fail = false;
 }
 
 /*
@@ -204,7 +205,7 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
         ctx.step = 1;
         return nextCommand;
     }
-    if (ctx.step == 1) 
+    else
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
@@ -212,10 +213,6 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
         ctx.step = 0;
         return nextCommand;
     }
-    RobotCommand nextCommand;
-    nextCommand.type = CommandType::None;
-    nextCommand.requested_state = RobotState::Retreat;
-    return nextCommand;
 }
 
 RobotCommand StateMachine::handleQRScan(RobotContext& ctx)
@@ -353,29 +350,44 @@ RobotCommand StateMachine::handleChuteRetreat(RobotContext& ctx)
 RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::HeatScan) throw std::runtime_error("Improper state!");
+    if (ctx.general_command_fail)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Monitor;
+        return nextCommand;
+    }
     if (ctx.step == 0) {
-        RobotCommand tempCommand;
-        tempCommand.type = CommandType::MoveArm;
-        tempCommand.pose = getPoseForState(ctx);
-        tempCommand.requested_state = RobotState::HeatScan;
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::GetNextScanPose;
+        nextCommand.requested_state = RobotState::HeatScan;
         ctx.step = 1;
-        return tempCommand;
+        return nextCommand;
+    }
+    if (ctx.general_command_fail || timeout_elapsed(ctx.last_state, std::chrono::seconds(10)))
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Monitor;
+        return nextCommand;
     }
     if (ctx.step == 1) {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::VisionScan;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = ctx.target_pose;
         nextCommand.requested_state = RobotState::HeatScan;
         ctx.step = 2;
         return nextCommand;
     }
-    if (ctx.vision_scan_available) {
+    if (ctx.at_pose && ctx.step == 2) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::Hold;
+        nextCommand.requested_state = RobotState::CloseScan;
         return nextCommand;
     }
     RobotCommand tempCommand;
     tempCommand.type = CommandType::None;
+    tempCommand.pose = ctx.target_pose;
     tempCommand.requested_state = RobotState::HeatScan;
     return tempCommand;
 }
@@ -383,4 +395,29 @@ RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
 RobotCommand StateMachine::handleCloseScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::CloseScan) throw std::runtime_error("Improper state!");
+    if (timeout_elapsed(ctx.last_state, std::chrono::seconds(10)))
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Hold;
+        return nextCommand;
+    }
+    if (ctx.vision_scan_available)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::VisionScan;
+        nextCommand.requested_state = RobotState::CloseScan;
+        return nextCommand;
+    }
+    if (ctx.consensus_size > 0)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Hold;
+        return nextCommand;
+    }
+    RobotCommand nextCommand;
+    nextCommand.type = CommandType::None;
+    nextCommand.requested_state = RobotState::CloseScan;
+    return nextCommand;
 }

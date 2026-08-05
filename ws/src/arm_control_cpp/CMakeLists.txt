@@ -26,6 +26,7 @@ find_package(std_msgs REQUIRED)
 find_package(apple_interfaces REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -80,6 +81,7 @@ ament_target_dependencies(arm_control
   apple_interfaces
   tf2
   tf2_ros
+  tf2_geometry_msgs
 )
 
 add_executable(arm_control_cpp
@@ -138,6 +140,11 @@ add_robot_test(
 add_robot_test(
     vision_scan_test
     test_vision_scan
+)
+
+add_robot_test(
+    pick_place_test
+    test_pick_place
 )
 
 if(BUILD_TESTING)

@@ -41,20 +41,7 @@ int main(int argc, char * argv[])
     node->initializeMoveIt();
 
     // Create seeded context
-    node->context_.state = RobotState::QRScan;
-    node->createQRScan();
-    auto start_time = std::chrono::steady_clock::now();
-    while (node->context_.state != RobotState::Chute)
-    {
-        if(timeout_elapsed(start_time, std::chrono::seconds(10)))
-        {
-            assert(false && "Vision Scan Timeout!!");
-        }
-        node->controlLoop();
-    }
-    // Iterate state from seeded context
-    RCLCPP_WARN(node->get_logger(), "Inspect the bin in RVIZ. Is it correctly placed?");
-    node->holdForUser();
+    node->context_.state = RobotState::CloseScan;
 
     while (node->context_.state != RobotState::Monitor)
     {

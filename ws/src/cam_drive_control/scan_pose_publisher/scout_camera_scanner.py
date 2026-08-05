@@ -6,7 +6,7 @@ from rclpy.node import Node
 from rclpy.duration import Duration
 from tf2_ros import Buffer, TransformListener, TransformException
 from tf2_geometry_msgs import do_transform_pose
-from std_msgs.msg import Int32
+from std_msgs.msg import UInt32
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray
 
@@ -56,7 +56,7 @@ SCAN_PLANE_DISTANCE = 1.859 # meters between scout camera and scanning plane
 CAM_TO_WALL_DISTANCE = 0.1 # meters between arm camera and scanning plane
 MAX_POSES_IN_WS = 10
 CONFIDENCE_THRESHOLD = 0.85
-RADIUS = int(0.25 * GOAL_RADIUS)
+RADIUS = int(0.25 * GOAL_RADIUS * 0.6)
 MAX_DEPTH_SEARCH = 30
 MAX_WIDTH_SEARCH = 50
 
@@ -146,7 +146,7 @@ class ScoutCamera(Node):
 
 
         self.clear_subscription = self.create_subscription(
-            Int32,
+            UInt32,
             '/scout1_cam/clear_pose',
             self.clear_callback,
             10,
@@ -255,7 +255,8 @@ class ScoutCamera(Node):
         pose_stamped_out.header.frame_id = 'map'
         pose_stamped_out.header.stamp = self.get_clock().now().to_msg()  
         pose_stamped_out.pose = pose_out
-        pose_stamped_out.pose.position.z += 0.4
+        pose_stamped_out.pose.position.z += 0.4024
+        pose_stamped_out.pose.position.y += 0.3032
 
         scan_pose = ScanPose(pose_stamped_out, NEXT_ID, False)
         NEXT_ID += 1
@@ -264,109 +265,112 @@ class ScoutCamera(Node):
         return
 
     def control_loop(self):
-        while rclpy.ok():
-            if self.cx is None:
-                self.get_logger().warn("Waiting for Camera intrinsics", throttle_duration_sec=5.0)
-                rate = self.create_rate(2, self.get_clock())
-                rate.sleep()
-            elif self.latest_image_raw is None:
-                self.get_logger().warn("Waiting for Camera image", throttle_duration_sec=5.0)
-                rate = self.create_rate(2, self.get_clock())
-                rate.sleep()
-            else:
-                break
-        if not self.tf_ready:
-            return False
-        now = self.get_clock().now()
-        newScan = False
-        pa = PoseArray()
-        pa.header.stamp = self.get_clock().now().to_msg()
-        pa.header.frame_id = "map"
-
-        state_critical = False
-        pose_ws_count = 0
-        for scan_pose in self.pose_list:
-            scan_pose.pose.header.stamp = self.get_clock().now().to_msg()
-            pa.poses.append(scan_pose.pose.pose)
-            in_ws, critical = self.pose_in_ws(scan_pose.pose)
-            if critical:
-                state_critical = True
-            if in_ws:
-                pose_ws_count += 1  
-        self.pose_publisher.publish(pa)  
-
-        if not self.scan_busy:
-            if state_critical:
-                self.get_logger().warn("Do not move here, critical poses to be cleared!", throttle_duration_sec=5.0)
-            else:
-                if pose_ws_count < MAX_POSES_IN_WS: 
-                    self.get_logger().warn("Move forward by one pane!", throttle_duration_sec=5.0)
+        try:
+            while rclpy.ok():
+                if self.cx is None:
+                    self.get_logger().warn("Waiting for Camera intrinsics", throttle_duration_sec=5.0)
+                    rate = self.create_rate(2, self.get_clock())
+                    rate.sleep()
+                elif self.latest_image_raw is None:
+                    self.get_logger().warn("Waiting for Camera image", throttle_duration_sec=5.0)
+                    rate = self.create_rate(2, self.get_clock())
+                    rate.sleep()
                 else:
-                    self.get_logger().warn("Too many scans to be cleared, don't move yet!", throttle_duration_sec=5.0)
-        
-            if (now.nanoseconds - self.last_scan_time.nanoseconds)/(10**9) > TIME_BETWEEN_SCAN:
-                left_scan = self.get_leftmost_scan()
-                if left_scan is None:
-                    newScan = True
+                    break
+            if not self.tf_ready:
+                return False
+            now = self.get_clock().now()
+            newScan = False
+            pa = PoseArray()
+            pa.header.stamp = self.get_clock().now().to_msg()
+            pa.header.frame_id = "map"
+
+            state_critical = False
+            pose_ws_count = 0
+            for scan_pose in self.pose_list:
+                scan_pose.pose.header.stamp = self.get_clock().now().to_msg()
+                pa.poses.append(scan_pose.pose.pose)
+                in_ws, critical = self.pose_in_ws(scan_pose.pose)
+                if critical:
+                    state_critical = True
+                if in_ws:
+                    pose_ws_count += 1  
+            self.pose_publisher.publish(pa)  
+
+            if not self.scan_busy:
+                if state_critical:
+                    self.get_logger().warn("Do not move here, critical poses to be cleared!", throttle_duration_sec=5.0)
                 else:
-                    left_pose = left_scan.pose
-                    try:
-                        transform = self.tf_buffer.lookup_transform(
-                            self.frame_id,
-                            "map",
-                            rclpy.time.Time()     
-                        )
-                    except TransformException:
-                        self.get_logger().debug("Waiting for TF tree...")
-                        return
-                    pose_out = do_transform_pose(left_pose.pose, transform)
-                    if pose_out.position.y > MAX_RIGHT_SCAN: #Right -> +y
+                    if pose_ws_count < MAX_POSES_IN_WS: 
+                        self.get_logger().warn("Move forward by one pane!", throttle_duration_sec=5.0)
+                    else:
+                        self.get_logger().warn("Too many scans to be cleared, don't move yet!", throttle_duration_sec=5.0)
+            
+                if (now.nanoseconds - self.last_scan_time.nanoseconds)/(10**9) > TIME_BETWEEN_SCAN:
+                    left_scan = self.get_leftmost_scan()
+                    if left_scan is None:
                         newScan = True
+                    else:
+                        left_pose = left_scan.pose
+                        try:
+                            transform = self.tf_buffer.lookup_transform(
+                                self.frame_id,
+                                "map",
+                                rclpy.time.Time()     
+                            )
+                        except TransformException:
+                            self.get_logger().debug("Waiting for TF tree...")
+                            return
+                        pose_out = do_transform_pose(left_pose.pose, transform)
+                        if pose_out.position.y > MAX_RIGHT_SCAN: #Right -> +y
+                            newScan = True
 
-            if newScan:
-                with self.image_lock:
-                    local_image = self.latest_image_raw
-                if local_image is None:
-                    return
-                self.get_logger().info("Scanning here!")
-                self.scan_busy = True
-                results = self.apple_model(local_image, verbose=False)
+                if newScan:
+                    with self.image_lock:
+                        local_image = self.latest_image_raw
+                    if local_image is None:
+                        return
+                    self.get_logger().info("Scanning here!")
+                    self.scan_busy = True
+                    results = self.apple_model(local_image, verbose=False)
 
-                self.process_results(results)
-                self.last_scan_time = rclpy.time.Time()
-                while rclpy.ok():
-                    try:
-                        self.last_scan_tf = self.tf_buffer.lookup_transform(
-                                    "map",
-                                    self.frame_id,
-                                    self.last_scan_time  
-                                )
-                        break
-                    except TransformException as e:
-                        self.get_logger().warn(
-                            f"TF lookup failed: "
-                            f"target='map', "
-                            f"source='{self.frame_id}', "
-                            f"stamp={self.last_scan_time.to_msg().sec}.{self.last_scan_time.to_msg().nanosec}: "
-                            f"{e}"
-                        )
-                        rate = self.create_rate(2, self.get_clock())
-                        rate.sleep()
+                    self.process_results(results)
+                    self.last_scan_time = rclpy.time.Time()
+                    while rclpy.ok():
+                        try:
+                            self.last_scan_tf = self.tf_buffer.lookup_transform(
+                                        "map",
+                                        self.frame_id,
+                                        self.last_scan_time  
+                                    )
+                            break
+                        except TransformException as e:
+                            self.get_logger().warn(
+                                f"TF lookup failed: "
+                                f"target='map', "
+                                f"source='{self.frame_id}', "
+                                f"stamp={self.last_scan_time.to_msg().sec}.{self.last_scan_time.to_msg().nanosec}: "
+                                f"{e}"
+                            )
+                            rate = self.create_rate(2, self.get_clock())
+                            rate.sleep()
 
-                self.get_logger().info("Scan Created")
-            # Example PoseStamped in base_link frame
-            # pose_in = PoseStamped()
-            # pose_in.header.frame_id = self.frame_id
-            # pose_in.header.stamp = self.last_scan_time.to_msg()
-            # pose_in.pose.position.x = 0.0
-            # pose_in.pose.position.y = 0.0
-            # pose_in.pose.position.z = SCAN_PLANE_DISTANCE
-            # pose_in.pose.orientation.x = 0.0
-            # pose_in.pose.orientation.y = 0.0
-            # pose_in.pose.orientation.z = 0.0
-            # pose_in.pose.orientation.w = 1.0
+                    self.get_logger().info("Scan Created")
+                # Example PoseStamped in base_link frame
+                # pose_in = PoseStamped()
+                # pose_in.header.frame_id = self.frame_id
+                # pose_in.header.stamp = self.last_scan_time.to_msg()
+                # pose_in.pose.position.x = 0.0
+                # pose_in.pose.position.y = 0.0
+                # pose_in.pose.position.z = SCAN_PLANE_DISTANCE
+                # pose_in.pose.orientation.x = 0.0
+                # pose_in.pose.orientation.y = 0.0
+                # pose_in.pose.orientation.z = 0.0
+                # pose_in.pose.orientation.w = 1.0
 
-            # self.create_scan_pose(pose_in)
+                # self.create_scan_pose(pose_in)
+        except Exception as e:
+            self.get_logger().error(e)
 
     def get_leftmost_scan(self):
         with self.pose_list_lock:
@@ -433,8 +437,8 @@ class ScoutCamera(Node):
         else:
             valid_ws = [ws for ws in robot_workspaces if ws.arm_ID == arm_id]
         for ws in valid_ws:
-            y = y_base - ws.origin[1]
-            z = z_base - ws.origin[2]
+            y = y_base - ws.origin[1] + ws.area[0] / 2
+            z = z_base - ws.origin[2] + ws.area[1] / 2
 
             if (
                 0 <= y < ws.area[0]

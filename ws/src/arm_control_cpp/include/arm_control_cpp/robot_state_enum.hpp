@@ -33,15 +33,14 @@ struct RobotContext
     
     int consensus_size;
 
-    bool suction_state; // true->has apple, false->no apple
-    bool at_pose;
-    bool vision_scan_available;
-    bool move_command_fail;
+    bool suction_state = false; // true->has apple, false->no apple
+    bool at_pose = false;
+    bool vision_scan_available = true;
+    bool move_command_fail = false;
+    bool general_command_fail = false;
 
     std::chrono::steady_clock::time_point last_state;
     std::chrono::steady_clock::time_point last_qr_scan;
-
-    // current_heat_map
 
 };
 

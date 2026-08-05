@@ -3,13 +3,13 @@
 
     <link name="arm_1_main_workspace">
         <workspace_area name="arm_1_main_workspace" type="normal">
-            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.1524 1.2192"/>
-            <rectangle size="1.2192 1.2192"/> 
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.4582 1.2192"/>
+            <rectangle size="0.609 1.2192"/> 
         </workspace_area>
         <visual name="arm_1_main_workspace_visual">
-            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.1524 1.2192"/>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.4582 1.2192"/>
             <geometry>
-                <box size="0.1 1.2192 1.2192"/> 
+                <box size="0.1 0.609 1.2192"/> 
             </geometry>
             <material name="green">
                 <color rgba="0 1.0 0 0.4"/>
@@ -19,7 +19,7 @@
 
     <link name="arm_1_bottom_workspace">
         <workspace_area name="arm_1_bottom_workspace" type="critical">
-            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.4572 0.3048"/>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.6096 0.3048"/>
             <rectangle size="0.3048 0.6096"/> 
         </workspace_area>
         <visual name="arm_1_bottom_workspace_visual">
@@ -35,11 +35,11 @@
 
     <link name="arm_1_right_workspace">
         <workspace_area name="arm_1_right_workspace" type="critical">
-            <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.6096 1.2192"/>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 1.2192"/>
             <rectangle size="0.3048 1.2192"/> 
         </workspace_area>
         <visual name="arm_1_right_workspace_visual">
-            <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.6096 1.2192"/>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 1.2192"/>
             <geometry>
                 <box size="0.1 0.3048 1.2192"/> 
             </geometry>
