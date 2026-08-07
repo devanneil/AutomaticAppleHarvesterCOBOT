@@ -113,7 +113,7 @@ class CameraDriver(Node):
         self.qr_message = None
         self.headless = False
         self.center_coordinates = (0, 0)
-        self.scan_radius = int(VisionScan.Goal.RADIUS*1.5)
+        self.scan_radius = int(VisionScan.Goal.RADIUS)
         #==================USER DEPENDENT VARIABLES===========
         self.cv_lock = threading.Lock()
         self.clicked_locations = list()
@@ -710,8 +710,8 @@ class CameraDriver(Node):
 
         # Your existing tool offset
         pose.pose.position.x += 0.0
-        pose.pose.position.y -= 0.04
-        pose.pose.position.z += 0.05
+        pose.pose.position.y -= 0.03
+        pose.pose.position.z += 0.04
 
         pose.pose.orientation.x = 0.5
         pose.pose.orientation.y = -0.5

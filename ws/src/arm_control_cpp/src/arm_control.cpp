@@ -154,7 +154,9 @@ bool ArmController::moveToPose(
             "MoveGroup not initialized");
         return false;
     }
-    auto current_pose = move_group_->getCurrentPose("suction_link");
+
+    auto current_pose = move_group_->getCurrentPose(end_effector);
+
     RCLCPP_INFO(get_logger(),
         "Goal pose: x=%f y=%f z=%f",
         target.pose.position.x,
@@ -169,18 +171,105 @@ bool ArmController::moveToPose(
         return false;
     }
 
+    double buffer = 0.25; // meters
+
+    double min_x = std::min(
+        current_pose.pose.position.x,
+        target.pose.position.x
+    ) - buffer;
+
+    double max_x = std::max(
+        current_pose.pose.position.x,
+        target.pose.position.x
+    ) + buffer;
+
+
+    double min_y = std::min(
+        current_pose.pose.position.y,
+        target.pose.position.y
+    ) - buffer;
+
+    double max_y = std::max(
+        current_pose.pose.position.y,
+        target.pose.position.y
+    ) + buffer;
+
+
+    double min_z = std::min(
+        current_pose.pose.position.z,
+        target.pose.position.z
+    ) - buffer;
+
+    double max_z = std::max(
+        current_pose.pose.position.z,
+        target.pose.position.z
+    ) + buffer;
+
+
+    move_group_->setWorkspace(
+        min_x,
+        min_y,
+        min_z,
+        max_x,
+        max_y,
+        max_z
+    );
+
+    bool planned;
     moveit::planning_interface::MoveGroupInterface::Plan plan;
-
-    bool planned =
-        (move_group_->plan(plan) ==
-        moveit::core::MoveItErrorCode::SUCCESS);
-
-    if (!planned)
+    for(int i = 0; i < 3; i++)
     {
-        RCLCPP_WARN(get_logger(), "Planning failed.");
+        move_group_->setPlanningPipelineId("ompl");
+        move_group_->setPlannerId("RRTstar");
+        move_group_->setPlanningTime(0.5);
+        move_group_->setNumPlanningAttempts(3);
 
+        planned = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+
+        if (!planned)
+        {
+            RCLCPP_WARN(get_logger(), "Planning failed.");
+        }
+        else
+        {
+            break;
+        }
+    }
+    if(!planned)
+    {
+        RCLCPP_ERROR(get_logger(), "Failed to plan after multiple attempts!");
         return false;
     }
+
+    const auto &traj = plan.trajectory_.joint_trajectory;
+
+    RCLCPP_INFO(
+        get_logger(),
+        "Trajectory: %zu points, %zu joints",
+        traj.points.size(),
+        traj.joint_names.size());
+
+    // for (size_t i = 0; i < traj.points.size(); ++i)
+    // {
+    //     const auto &p = traj.points[i];
+
+    //     RCLCPP_INFO(
+    //         get_logger(),
+    //         "Point %zu: t=%.3f s",
+    //         i,
+    //         p.time_from_start.sec +
+    //             p.time_from_start.nanosec * 1e-9);
+
+    //     for (size_t j = 0; j < p.positions.size(); ++j)
+    //     {
+    //         RCLCPP_INFO(
+    //             get_logger(),
+    //             "  %s: pos=%.4f vel=%.4f",
+    //             traj.joint_names[j].c_str(),
+    //             p.positions[j],
+    //             j < p.velocities.size() ? p.velocities[j] : 0.0);
+    //     }
+    // }
 
     if (blocking)
         visual_tools_->prompt("Execute planned trajectory?");

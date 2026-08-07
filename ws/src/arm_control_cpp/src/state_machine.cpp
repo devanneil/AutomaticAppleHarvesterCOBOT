@@ -402,18 +402,18 @@ RobotCommand StateMachine::handleCloseScan(RobotContext& ctx)
         nextCommand.requested_state = RobotState::Hold;
         return nextCommand;
     }
-    if (ctx.vision_scan_available)
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::VisionScan;
-        nextCommand.requested_state = RobotState::CloseScan;
-        return nextCommand;
-    }
     if (ctx.consensus_size > 0)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
         nextCommand.requested_state = RobotState::Hold;
+        return nextCommand;
+    }
+    if (ctx.vision_scan_available)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::VisionScan;
+        nextCommand.requested_state = RobotState::CloseScan;
         return nextCommand;
     }
     RobotCommand nextCommand;

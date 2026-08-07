@@ -46,11 +46,13 @@ int main(int argc, char * argv[])
     auto start_time = std::chrono::steady_clock::now();
     while (node->context_.state != RobotState::Chute)
     {
+        node->controlLoop();
         if(timeout_elapsed(start_time, std::chrono::seconds(10)))
         {
+            node->context_.state = RobotState::Monitor;
+            node->controlLoop();
             assert(false && "Vision Scan Timeout!!");
         }
-        node->controlLoop();
     }
     // Iterate state from seeded context
     RCLCPP_WARN(node->get_logger(), "Inspect the bin in RVIZ. Is it correctly placed?");
