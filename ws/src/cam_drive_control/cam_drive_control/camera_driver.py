@@ -2,6 +2,7 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
+from rclpy.time import Time
 from rclpy.parameter import Parameter
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from ament_index_python.packages import get_package_share_directory
@@ -114,6 +115,9 @@ class CameraDriver(Node):
         self.headless = False
         self.center_coordinates = (0, 0)
         self.scan_radius = int(VisionScan.Goal.RADIUS)
+        self.goal_stamp = None
+        self.latest_image_stamp = None
+        self.image_condition = threading.Condition()
         #==================USER DEPENDENT VARIABLES===========
         self.cv_lock = threading.Lock()
         self.clicked_locations = list()
@@ -147,35 +151,71 @@ class CameraDriver(Node):
             cancel_callback=self.cancel_callback,
             callback_group=self.action_group
         )
-        self.control_timer = self.create_timer(0.1, self.control_loop, callback_group=self.camera_group)
-    
-    def control_loop(self):
-        if self.latest_frame is None:
-            return
-        with self.frame_lock:
-            image_msg, depth_msg = self.latest_frame
-            self.latest_frame = None
-        with self.image_lock:
-            self.latest_image_raw = self.convert_image(image_msg)
-            self.image_count_since_last_state += 1
-        height, width = self.latest_image_raw.shape[:2]
-        self.center_coordinates = (width // 2, height // 2)
-        if self.mode == PerceptionMode.APPLE:
-            self.detect_apples(self.latest_image_raw, depth_msg)
+        self.control_thread_running = True
+        self.control_thread = threading.Thread(
+            target=self.control_loop,
+            daemon=True
+        )
+        self.control_thread.start()
 
-        if self.mode == PerceptionMode.QR:
-            self.detect_qr(self.latest_image_raw, depth_msg)
+    def destroy_node(self):
+        self.control_thread_running = False
+
+        if self.control_thread.is_alive():
+            self.control_thread.join(timeout=1.0)
+
+        super().destroy_node()
+
+    def control_loop(self):
+        while self.control_thread_running:
+            with self.image_condition:
+                self.image_condition.wait(timeout=1.0)
+            with self.frame_lock:
+                if self.latest_frame is None:
+                    continue
+
+                image_msg, depth_msg = self.latest_frame
+                self.latest_frame = None
+
+            image_time = rclpy.time.Time.from_msg(image_msg.header.stamp)
+            # now = self.get_clock().now()
+
+            # age = (now - image_time).nanoseconds / 1e9
+
+            # self.get_logger().info(f"Node control age: {age}")
+            if self.goal_stamp is not None:
+                if image_time < self.goal_stamp:
+                    self.get_logger().debug(
+                        "Discarding image captured before goal"
+                    )
+                    continue
+            with self.image_lock:
+                self.latest_image_raw = self.convert_image(image_msg)
+                self.image_count_since_last_state += 1
+            height, width = self.latest_image_raw.shape[:2]
+            self.center_coordinates = (width // 2, height // 2)
+            if self.mode == PerceptionMode.APPLE:
+                self.detect_apples(self.latest_image_raw, depth_msg)
+
+            if self.mode == PerceptionMode.QR:
+                self.detect_qr(self.latest_image_raw, depth_msg)
+
+            time.sleep(1)
 
 
     def image_callback(self, image_msg, depth_msg):
+        image_time = rclpy.time.Time.from_msg(image_msg.header.stamp)
         # now = self.get_clock().now()
-        # image_time = rclpy.time.Time.from_msg(image_msg.header.stamp)
 
         # age = (now - image_time).nanoseconds / 1e9
 
-        # print(f"Image age: {age:.3f}s")
+        # self.get_logger().info(f"Image age: {age:.3f}s")
         with self.frame_lock:
             self.latest_frame = (image_msg, depth_msg)
+
+        with self.image_condition:
+            self.latest_image_stamp = image_msg.header.stamp
+            self.image_condition.notify_all()
 
 
         # self.get_logger().info(
@@ -237,8 +277,8 @@ class CameraDriver(Node):
                 depth_ros_msg.header.frame_id,
                 depth_ros_msg.header.stamp
             )
-        except TransformException:
-            self.get_logger().error("TF Error!")
+        except TransformException as e:
+            self.get_logger().error(f"TF Error! {e}")
             return
 
         if not self.headless:
@@ -339,7 +379,15 @@ class CameraDriver(Node):
         ):
             self.get_logger().warn("Invalid scan type requested.")
             return GoalResponse.REJECT
+        if goal_request.stamp.sec != 0 or goal_request.stamp.nanosec != 0:
+            self.goal_stamp = rclpy.time.Time.from_msg(goal_request.stamp)
+        else:
+            self.goal_stamp = self.get_clock().now()
+        now = self.get_clock().now()
 
+        age = (now - self.goal_stamp).nanoseconds / 1e9
+
+        self.get_logger().info(f"Goal age: {age:.3f}s")
         if self.apple_model is None or self.qr_model is None:
             self.get_logger().warn("Scan requested on no inference.")
             return GoalResponse.REJECT
@@ -366,7 +414,26 @@ class CameraDriver(Node):
         return CancelResponse.ACCEPT
     def execute_callback(self, goal_handle):
         goal = goal_handle.request
+        # Clear the pipeline to get latest frames
+        with self.frame_lock:
+            self.latest_frame = None
 
+        with self.results_lock:
+            self.results = None
+            self.results_qr = None
+
+        with self.selected_lock:
+            self.selected_results.clear()
+        # Wait until latest stamp matches current time
+        goal_start = self.get_clock().now()
+
+        with self.image_condition:
+            while (
+                self.latest_image_stamp is None or
+                rclpy.time.Time.from_msg(self.latest_image_stamp) < goal_start
+            ):
+                self.image_condition.wait(timeout=1.0)
+        
         timeout = 10.0  # seconds
         start_time = time.monotonic()
 

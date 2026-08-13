@@ -29,8 +29,10 @@ def main(args=None):
 
     while rclpy.ok():
         if node is None:
-            time.sleep(0.1)
+            time.sleep(0.5)
             continue
+        with node.image_condition:
+            node.image_condition.wait(timeout=1.0)
         frame = None
         image_results, qr_results = node.get_image_results()
         if node.mode == PerceptionMode.APPLE and image_results is not None:
@@ -65,7 +67,7 @@ def main(args=None):
             if frame is not None:
                 cv2.imshow("Camera View", frame)
 
-        key = cv2.waitKey(10) & 0xFF
+        key = cv2.waitKey(50) & 0xFF
 
         if key == 27:
             rclpy.shutdown()

@@ -41,7 +41,7 @@ public:
     bool holdForUser();
     rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedFuture disableVacuum();
 private:
-
+    void logPose(const std::string poseContext, const geometry_msgs::msg::PoseStamped& pose);
     //void appleCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void suctionCallback(const std_msgs::msg::UInt8::SharedPtr msg);
     void rvizJoyCallback(const sensor_msgs::msg::Joy::SharedPtr msg);

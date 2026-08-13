@@ -104,6 +104,21 @@ void ArmController::initializeMoveIt()
 //         context_.consensus_size++;
 //     }
 // }
+void ArmController::logPose(const std::string poseContext, const geometry_msgs::msg::PoseStamped& pose)
+{
+    RCLCPP_INFO(
+        get_logger(),
+        "%s [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
+        poseContext.c_str(),
+        pose.header.frame_id.c_str(),
+        pose.pose.position.x,
+        pose.pose.position.y,
+        pose.pose.position.z,
+        pose.pose.orientation.x,
+        pose.pose.orientation.y,
+        pose.pose.orientation.z,
+        pose.pose.orientation.w);
+}
 void ArmController::suctionCallback(
     const std_msgs::msg::UInt8::SharedPtr msg)
 {
@@ -141,6 +156,56 @@ void ArmController::rvizJoyCallback(
         return;
     }
 }
+std::vector<double> generateBoundingBox(
+    const geometry_msgs::msg::PoseStamped& current_pose, 
+    const geometry_msgs::msg::PoseStamped& target_pose
+)
+{
+    double buffer = 0.25; // meters
+
+    double min_x = std::min(
+        current_pose.pose.position.x,
+        target_pose.pose.position.x
+    ) - buffer;
+
+    double max_x = std::max(
+        current_pose.pose.position.x,
+        target_pose.pose.position.x
+    ) + buffer;
+
+
+    double min_y = std::min(
+        current_pose.pose.position.y,
+        target_pose.pose.position.y
+    ) - buffer;
+
+    double max_y = std::max(
+        current_pose.pose.position.y,
+        target_pose.pose.position.y
+    ) + buffer;
+
+
+    double min_z = std::min(
+        current_pose.pose.position.z,
+        target_pose.pose.position.z
+    ) - buffer;
+
+    double max_z = std::max(
+        current_pose.pose.position.z,
+        target_pose.pose.position.z
+    ) + buffer;
+    
+    std::vector<double> bbox {
+        min_x,
+        min_y,
+        min_z,
+        max_x,
+        max_y,
+        max_z
+    };
+
+    return bbox;
+}
 bool ArmController::moveToPose(
     const geometry_msgs::msg::PoseStamped& target,
     bool blocking = false,
@@ -157,11 +222,7 @@ bool ArmController::moveToPose(
 
     auto current_pose = move_group_->getCurrentPose(end_effector);
 
-    RCLCPP_INFO(get_logger(),
-        "Goal pose: x=%f y=%f z=%f",
-        target.pose.position.x,
-        target.pose.position.y,
-        target.pose.position.z);
+    logPose("Move Goal Pose: ", target);
     if(poseEqual(current_pose, target)) return true;
     move_group_->clearPoseTargets();
     move_group_->setStartStateToCurrentState();
@@ -170,49 +231,10 @@ bool ArmController::moveToPose(
         RCLCPP_ERROR(get_logger(), "Failed to set pose target.");
         return false;
     }
-
-    double buffer = 0.25; // meters
-
-    double min_x = std::min(
-        current_pose.pose.position.x,
-        target.pose.position.x
-    ) - buffer;
-
-    double max_x = std::max(
-        current_pose.pose.position.x,
-        target.pose.position.x
-    ) + buffer;
-
-
-    double min_y = std::min(
-        current_pose.pose.position.y,
-        target.pose.position.y
-    ) - buffer;
-
-    double max_y = std::max(
-        current_pose.pose.position.y,
-        target.pose.position.y
-    ) + buffer;
-
-
-    double min_z = std::min(
-        current_pose.pose.position.z,
-        target.pose.position.z
-    ) - buffer;
-
-    double max_z = std::max(
-        current_pose.pose.position.z,
-        target.pose.position.z
-    ) + buffer;
-
+    std::vector<double> bbox = generateBoundingBox(current_pose, target);
 
     move_group_->setWorkspace(
-        min_x,
-        min_y,
-        min_z,
-        max_x,
-        max_y,
-        max_z
+        bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5]
     );
 
     bool planned;
@@ -221,7 +243,7 @@ bool ArmController::moveToPose(
     {
         move_group_->setPlanningPipelineId("ompl");
         move_group_->setPlannerId("RRTstar");
-        move_group_->setPlanningTime(0.5);
+        move_group_->setPlanningTime(0.7);
         move_group_->setNumPlanningAttempts(3);
 
         planned = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
@@ -327,29 +349,9 @@ void ArmController::controlLoop()
     }
     RCLCPP_INFO(get_logger(), robotStateToString(context_.state));
     auto pose = cmd.pose;
-    RCLCPP_INFO(
-        get_logger(),
-        "PoseStamped [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
-        pose.header.frame_id.c_str(),
-        pose.pose.position.x,
-        pose.pose.position.y,
-        pose.pose.position.z,
-        pose.pose.orientation.x,
-        pose.pose.orientation.y,
-        pose.pose.orientation.z,
-        pose.pose.orientation.w);
-    pose = move_group_->getCurrentPose("suction_link");
-    RCLCPP_INFO(
-        get_logger(),
-        "PoseStamped [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
-        pose.header.frame_id.c_str(),
-        pose.pose.position.x,
-        pose.pose.position.y,
-        pose.pose.position.z,
-        pose.pose.orientation.x,
-        pose.pose.orientation.y,
-        pose.pose.orientation.z,
-        pose.pose.orientation.w);
+    logPose("Command Pose: ", pose);
+    logPose("Current Pose: ", move_group_->getCurrentPose("suction_link"));
+
 
     switch (cmd.type) {
         case CommandType::WaitForUser:
@@ -502,6 +504,7 @@ bool ArmController::createVisionScan(uint8_t scan_type)
     VisionScan::Goal goal_msg;
     goal_msg.order = scan_type;
     goal_msg.qr_message = "BIN_FLAG_SW";
+    goal_msg.stamp = get_clock()->now();
 
     rclcpp_action::Client<VisionScan>::SendGoalOptions options;
 
@@ -591,17 +594,7 @@ void ArmController::feedback_callback(
     if (last_goal_order_ == VisionScan::Goal::QR_SCAN)
     {
         auto pose = feedback->qr_pose;
-        RCLCPP_INFO(
-            get_logger(),
-            "QRPose [frame=%s] Pos(%.3f, %.3f, %.3f) Orient(%.3f, %.3f, %.3f, %.3f)",
-            pose.header.frame_id.c_str(),
-            pose.pose.position.x,
-            pose.pose.position.y,
-            pose.pose.position.z,
-            pose.pose.orientation.x,
-            pose.pose.orientation.y,
-            pose.pose.orientation.z,
-            pose.pose.orientation.w);
+        logPose("QR Pose: ", pose);
         updateBinPose(pose);
     }
 }
@@ -650,7 +643,7 @@ void ArmController::result_callback(
     }
     auto msg = std_msgs::msg::UInt32();
     msg.data = last_scan_ID;
-    //scan_pose_clear_pub_->publish(msg);
+    scan_pose_clear_pub_->publish(msg);
     last_scan_ID = 0;
 }
 

@@ -371,7 +371,7 @@ RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
         nextCommand.requested_state = RobotState::Monitor;
         return nextCommand;
     }
-    if (ctx.step == 1) {
+    if (ctx.vision_scan_available && ctx.step == 1) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = ctx.target_pose;
