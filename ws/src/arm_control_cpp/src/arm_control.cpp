@@ -2,7 +2,9 @@
 #include "arm_control_cpp/robot_state_enum.hpp"
 #include "arm_control_cpp/state_machine.hpp"
 #include "arm_control_cpp/utils.hpp"
-
+moveit_msgs::msg::RobotTrajectory concatenateTrajectories(
+    const moveit_msgs::msg::RobotTrajectory &traj1,
+    const moveit_msgs::msg::RobotTrajectory &traj2);
 ArmController::ArmController() : Node("arm_controller")
 {
     sub_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -88,8 +90,81 @@ void ArmController::initializeMoveIt()
     // auto pose = create_pose(0.01, 0.01, 0.05, -2.0, 0.0, 0, "Chute_SE");
     // moveToPose(pose, true, "suction_link");
     // throw std::runtime_error("testing");
+    // createAppleScan();
+    // while (context_.consensus_size == 0)
+    // {
+    //     rclcpp::sleep_for(std::chrono::milliseconds(500));
+    // }
 }
+void ArmController::test_function()
+{
+    robot_trajectory::RobotTrajectory total_traj(move_group_->getRobotModel(), "arm_1");
+    
+    context_.state = RobotState::QRScan;
+    auto pose = getPoseForState(context_);
+    moveit::core::RobotState current_state = *move_group_->getCurrentState();
+    auto plan = planMotion(current_state, pose, "suction_link");
+    if(plan)
+    {
+        const auto &traj = (*plan).trajectory_.joint_trajectory;
+        robot_trajectory::RobotTrajectory robot_traj(move_group_->getRobotModel(), "arm_1");
+        robot_traj.setRobotTrajectoryMsg(current_state, (*plan).trajectory_);
+        RCLCPP_INFO(
+            get_logger(),
+            "Trajectory: %zu points, %zu joints",
+            traj.points.size(),
+            traj.joint_names.size());
+        total_traj.append(robot_traj, 0);
+    } else 
+    {
+        RCLCPP_ERROR(get_logger(), "No plan given!");
+    }
 
+    context_.state = RobotState::Chute;
+    auto chute_pose = getPoseForState(context_);
+    const moveit::core::RobotState& qr_state = total_traj.getLastWayPoint();
+    plan = planMotion(qr_state, chute_pose, "suction_link");
+    if(plan)
+    {
+        const auto &traj = (*plan).trajectory_.joint_trajectory;
+        robot_trajectory::RobotTrajectory robot_traj(move_group_->getRobotModel(), "arm_1");
+        robot_traj.setRobotTrajectoryMsg(qr_state, (*plan).trajectory_);
+        RCLCPP_INFO(
+            get_logger(),
+            "Trajectory: %zu points, %zu joints",
+            traj.points.size(),
+            traj.joint_names.size());
+        total_traj.append(robot_traj, 0);
+    } else 
+    {
+        RCLCPP_ERROR(get_logger(), "No plan given!");
+    }
+
+    auto home_pose = move_group_->getCurrentPose("suction_link");
+    const moveit::core::RobotState& new_state = total_traj.getLastWayPoint();
+    plan = planMotion(new_state, home_pose, "suction_link");
+    if(plan)
+    {
+        const auto &traj = (*plan).trajectory_.joint_trajectory;
+        robot_trajectory::RobotTrajectory robot_traj(move_group_->getRobotModel(), "arm_1");
+        robot_traj.setRobotTrajectoryMsg(new_state, (*plan).trajectory_);
+        RCLCPP_INFO(
+            get_logger(),
+            "Trajectory: %zu points, %zu joints",
+            traj.points.size(),
+            traj.joint_names.size());
+        total_traj.append(robot_traj, 0);
+    } else 
+    {
+        RCLCPP_ERROR(get_logger(), "No plan given!");
+    }
+
+    moveit_msgs::msg::RobotTrajectory new_traj_msg;
+    total_traj.getRobotTrajectoryMsg(new_traj_msg);
+    // Execute the modified trajectory
+    move_group_->execute(new_traj_msg);
+    throw std::runtime_error("testing");
+}
 // void ArmController::appleCallback(
 //     const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 // {
@@ -157,42 +232,42 @@ void ArmController::rvizJoyCallback(
     }
 }
 std::vector<double> generateBoundingBox(
-    const geometry_msgs::msg::PoseStamped& current_pose, 
-    const geometry_msgs::msg::PoseStamped& target_pose
+    const geometry_msgs::msg::Pose& current_pose, 
+    const geometry_msgs::msg::Pose& target_pose
 )
 {
-    double buffer = 0.25; // meters
+    double buffer = 0.75; // meters
 
     double min_x = std::min(
-        current_pose.pose.position.x,
-        target_pose.pose.position.x
+        current_pose.position.x,
+        target_pose.position.x
     ) - buffer;
 
     double max_x = std::max(
-        current_pose.pose.position.x,
-        target_pose.pose.position.x
+        current_pose.position.x,
+        target_pose.position.x
     ) + buffer;
 
 
     double min_y = std::min(
-        current_pose.pose.position.y,
-        target_pose.pose.position.y
+        current_pose.position.y,
+        target_pose.position.y
     ) - buffer;
 
     double max_y = std::max(
-        current_pose.pose.position.y,
-        target_pose.pose.position.y
+        current_pose.position.y,
+        target_pose.position.y
     ) + buffer;
 
 
     double min_z = std::min(
-        current_pose.pose.position.z,
-        target_pose.pose.position.z
+        current_pose.position.z,
+        target_pose.position.z
     ) - buffer;
 
     double max_z = std::max(
-        current_pose.pose.position.z,
-        target_pose.pose.position.z
+        current_pose.position.z,
+        target_pose.position.z
     ) + buffer;
     
     std::vector<double> bbox {
@@ -231,7 +306,7 @@ bool ArmController::moveToPose(
         RCLCPP_ERROR(get_logger(), "Failed to set pose target.");
         return false;
     }
-    std::vector<double> bbox = generateBoundingBox(current_pose, target);
+    std::vector<double> bbox = generateBoundingBox(current_pose.pose, target.pose);
 
     move_group_->setWorkspace(
         bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5]
@@ -314,6 +389,110 @@ bool ArmController::moveToPose(
     }
 
     return true;
+}
+std::optional<moveit::planning_interface::MoveGroupInterface::Plan> ArmController::planMotion(
+    const moveit::core::RobotState& start_state,
+    const geometry_msgs::msg::PoseStamped& target_pose,
+    const std::string& end_effector
+)
+{
+    try
+    {
+        moveit::core::RobotState state = start_state;
+
+        const auto* joint_model_group = move_group_->getRobotModel()->getJointModelGroup("arm_1");
+        const std::vector<std::string>& joint_names = joint_model_group->getVariableNames();
+
+        std::vector<double> joint_values;
+        start_state.copyJointGroupPositions(joint_model_group, joint_values);
+        for (std::size_t i = 0; i < joint_names.size(); ++i)
+        {
+        RCLCPP_INFO(get_logger(), "Joint %s: %f", joint_names[i].c_str(), joint_values[i]);
+        }
+
+        // Make sure all link transforms have been recomputed
+        state.update();
+
+        const auto* link_model =
+            state.getRobotModel()->getLinkModel(end_effector);
+
+        if (!link_model)
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "Link '%s' does not exist in robot model",
+                end_effector.c_str());
+
+            return std::nullopt;
+        }
+
+        auto start_tf = state.getGlobalLinkTransform(end_effector).translation();
+        if (!start_tf.allFinite())
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "getGlobalLinkTransform() returned a non-finite transform for link '%s'",
+                end_effector.c_str());
+            return std::nullopt;
+        }
+        geometry_msgs::msg::PoseStamped start_pose;
+        start_pose.pose.position.x = start_tf[0];
+        start_pose.pose.position.y = start_tf[1];
+        start_pose.pose.position.z = start_tf[2];
+        start_pose.header.frame_id = "base_link";
+        logPose("Start pose for plan: ", start_pose);
+        auto bbox = generateBoundingBox(start_pose.pose, target_pose.pose);
+        move_group_->clearPoseTargets();
+        move_group_->setStartState(state);
+        if(!move_group_->setPoseTarget(target_pose, end_effector))
+        {
+            RCLCPP_ERROR(get_logger(), "Failed to set target pose!");
+            return std::nullopt;
+        }
+        move_group_->setWorkspace(
+            bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5]
+        );
+
+        bool planned = false;
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        for(int i = 0; i < 3; i++)
+        {
+            move_group_->setPlanningPipelineId("ompl");
+            move_group_->setPlannerId("RRTstar");
+            move_group_->setPlanningTime(0.7);
+            move_group_->setNumPlanningAttempts(3);
+
+            auto result = move_group_->plan(plan);
+
+            planned = (result == moveit::core::MoveItErrorCode::SUCCESS);
+
+            if (!planned)
+            {
+                RCLCPP_WARN(get_logger(), "Planning failed.");
+                RCLCPP_ERROR(
+                    get_logger(),
+                    "MoveIt plan() returned: %d",
+                    result.val);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if(!planned)
+        {
+            RCLCPP_ERROR(get_logger(), "Failed to plan after multiple attempts!");
+            return std::nullopt;
+        }
+
+        return plan;
+    }
+    catch (const std::exception &e)
+    {
+        RCLCPP_ERROR(get_logger(), "Planning threw an exception: %s", e.what());
+        return std::nullopt;
+    }
 }
 void ArmController::stopArm() {
     move_group_->stop();
@@ -648,6 +827,10 @@ void ArmController::result_callback(
 }
 
 geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
+    if (apple_pose_queue_.size() == 0)
+    {
+        throw std::runtime_error("No apple pose available!");
+    }
     auto target = apple_pose_queue_.front();
     apple_pose_queue_.pop_front();
     {

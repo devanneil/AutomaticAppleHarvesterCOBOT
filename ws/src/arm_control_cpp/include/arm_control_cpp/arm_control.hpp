@@ -37,6 +37,7 @@ public:
     void initializeMoveIt();
 
     void controlLoop();
+    void test_function();
     bool break_;
     bool holdForUser();
     rclcpp::Client<apple_interfaces::srv::SuctionCommand>::SharedFuture disableVacuum();
@@ -47,6 +48,14 @@ private:
     void rvizJoyCallback(const sensor_msgs::msg::Joy::SharedPtr msg);
 
     bool moveToPose(const geometry_msgs::msg::PoseStamped& target, bool blocking, std::string end_effector);
+    std::optional<moveit::planning_interface::MoveGroupInterface::Plan> planMotion(
+        const moveit::core::RobotState& start_state,
+        const geometry_msgs::msg::PoseStamped& target_pose,
+        const std::string& end_effector
+    );
+    moveit::core::RobotState stateFromTrajectoryEnd(
+        const moveit_msgs::msg::RobotTrajectory& trajectory
+    );
     void stopArm();
 
     // void executePlanService(

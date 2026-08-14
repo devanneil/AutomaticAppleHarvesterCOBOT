@@ -47,12 +47,13 @@ int main(int argc, char * argv[])
     while (node->context_.state != RobotState::Chute)
     {
         node->controlLoop();
-        if(timeout_elapsed(start_time, std::chrono::seconds(10)))
+        if(timeout_elapsed(start_time, std::chrono::seconds(15)))
         {
             node->context_.state = RobotState::Monitor;
             node->controlLoop();
             assert(false && "Vision Scan Timeout!!");
         }
+        rclcpp::sleep_for(std::chrono::milliseconds(100));
     }
     // Iterate state from seeded context
     RCLCPP_WARN(node->get_logger(), "Inspect the bin in RVIZ. Is it correctly placed?");

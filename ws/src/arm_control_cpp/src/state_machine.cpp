@@ -303,7 +303,6 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = getPoseForState(ctx);
-        nextCommand.pose.pose.position.z += 0.05;
         nextCommand.requested_state = RobotState::Chute;
         ctx.step = 2;
         return nextCommand;

@@ -32,6 +32,7 @@ int main(int argc, char * argv[])
     while (!shutdown_requested)
     {
         node->controlLoop();
+        node->test_function();
 
         if (node->break_)
             break;

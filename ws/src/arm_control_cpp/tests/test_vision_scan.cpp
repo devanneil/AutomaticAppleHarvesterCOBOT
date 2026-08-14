@@ -44,7 +44,7 @@ int main(int argc, char * argv[])
     //node->holdForUser();
     assert(node->createAppleScan() && "VISION SCAN FAILURE!");
     // Arbitrary sleep
-    rclcpp::sleep_for(std::chrono::seconds(5));
+    rclcpp::sleep_for(std::chrono::seconds(10));
     assert(node->context_.consensus_size >= 1 && "NO CONSENSUS FOUND!");
     auto pose = node->getNextPose();
     RCLCPP_INFO(
