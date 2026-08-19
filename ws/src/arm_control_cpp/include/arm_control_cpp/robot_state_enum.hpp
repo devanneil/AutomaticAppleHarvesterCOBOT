@@ -25,9 +25,8 @@ struct RobotContext
 {
     RobotState state;
 
-    std::string planning_group;
-
     geometry_msgs::msg::PoseStamped target_pose;
+    geometry_msgs::msg::PoseStamped scan_pose;
 
     int step = 0;
     
@@ -38,6 +37,7 @@ struct RobotContext
     bool vision_scan_available = true;
     bool move_command_fail = false;
     bool general_command_fail = false;
+    bool move_pipe_invalid = false;
 
     std::chrono::steady_clock::time_point last_state;
     std::chrono::steady_clock::time_point last_qr_scan;
@@ -50,12 +50,15 @@ enum class CommandType
     WaitForUser, // Prompt user for action
     MoveArm, // Send move arm command to go to pose
     SelectNextApple, // Fill active pose with next apple pose
+    ClearApplePose,
     StartSuction, // Trigger suction head
     StopSuction, // Disable suction head
     StopArm, // Halt movement
     VisionScan, // Refill consensus list
     QRScan,
-    GetNextScanPose
+    GetNextScanPose,
+    QueueAsyncPose,
+    AwaitAsyncExec
 };
 
 struct RobotCommand

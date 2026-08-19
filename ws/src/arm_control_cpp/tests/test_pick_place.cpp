@@ -13,6 +13,7 @@ public:
     using ArmController::context_;
     using ArmController::controlLoop;
     using ArmController::suction_timeout_;
+    using ArmController::move_group_;
 };
 
 std::atomic<bool> shutdown_requested{false};
@@ -42,6 +43,7 @@ int main(int argc, char * argv[])
 
     // Create seeded context
     node->context_.state = RobotState::CloseScan;
+    node->context_.scan_pose = node->move_group_->getCurrentPose("suction_link");
 
     while (node->context_.state != RobotState::Monitor)
     {

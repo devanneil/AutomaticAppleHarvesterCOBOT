@@ -18,14 +18,8 @@ RobotCommand StateMachine::update(RobotContext& ctx)
         case RobotState::Hold:
             nextCommand = handleHold(ctx);
             break;
-        case RobotState::Approach:
-            nextCommand = handleApproach(ctx);
-            break;
         case RobotState::Pick:
             nextCommand = handlePick(ctx);
-            break;
-        case RobotState::Retreat:
-            nextCommand = handleRetreat(ctx);
             break;
         case RobotState::QRScan:
             nextCommand = handleQRScan(ctx);
@@ -107,7 +101,7 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::SelectNextApple;
-        nextCommand.requested_state = RobotState::Approach;
+        nextCommand.requested_state = RobotState::Pick;
         return nextCommand;
     }
     else
@@ -120,30 +114,6 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
     }
 }
 
-/*
-Moving towards pick
-*/
-RobotCommand StateMachine::handleApproach(RobotContext& ctx)
-{
-    if (ctx.state != RobotState::Approach) throw std::runtime_error("Improper state!");
-    if (!ctx.at_pose)
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = ctx.target_pose;
-        nextCommand.pose.pose.position.x -= 0.2;
-        nextCommand.requested_state = RobotState::Approach;
-        return nextCommand;
-    }
-    else
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::StartSuction;
-        nextCommand.pose = ctx.target_pose;
-        nextCommand.requested_state = RobotState::Pick;
-        return nextCommand;
-    }
-}
 
 /*
 Picking the apple, suction trigger and move to apple directly, merged with twist pose
@@ -151,37 +121,75 @@ Picking the apple, suction trigger and move to apple directly, merged with twist
 RobotCommand StateMachine::handlePick(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Pick) throw std::runtime_error("Improper state!");
-    if (!ctx.at_pose && ctx.step == 0)
+    if (ctx.move_pipe_invalid)
     {
-        ctx.step = 1;
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = ctx.target_pose;
-        nextCommand.requested_state = RobotState::Pick;
+        nextCommand.pose = ctx.scan_pose;
+        nextCommand.requested_state = RobotState::Hold;
+        ctx.step = 0;
         return nextCommand;
     }
-    if (ctx.suction_state && ctx.step == 1)
+    if (ctx.step == 0)
     {
-        ctx.step = 2;
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::None;
+        nextCommand.type = CommandType::QueueAsyncPose;
+        nextCommand.pose = ctx.target_pose;
+        nextCommand.pose.pose.position.x -= 0.2;
         nextCommand.requested_state = RobotState::Pick;
+        ctx.step = 1;
+        return nextCommand;
+    }
+    if (ctx.step == 1)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::StartSuction;
+        nextCommand.requested_state = RobotState::Pick;
+        ctx.step = 2;
         return nextCommand;
     }
     if (ctx.step == 2)
     {
+        ctx.step = 3;
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = twistPick(ctx.target_pose);
-        nextCommand.requested_state = RobotState::Retreat;
-        ctx.step = 0;
+        nextCommand.type = CommandType::QueueAsyncPose;
+        nextCommand.pose = ctx.target_pose;
+        nextCommand.requested_state = RobotState::Pick;
         return nextCommand;
     }
-    if (timeout_elapsed(ctx.last_state, std::chrono::milliseconds(5000)))
+    if (ctx.suction_state && ctx.step == 3)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::QueueAsyncPose;
+        nextCommand.pose = twistPick(ctx.target_pose);
+        nextCommand.requested_state = RobotState::Pick;
+        ctx.step = 4;
+        return nextCommand;
+    }
+    if ((ctx.step == 3) && timeout_elapsed(ctx.last_state, std::chrono::milliseconds(5000)))
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
         nextCommand.requested_state = RobotState::Hold;
+        ctx.step = 0;
+        return nextCommand;
+    }
+    if (ctx.step == 4)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::QueueAsyncPose;
+        nextCommand.pose = ctx.target_pose;
+        nextCommand.pose.pose.position.x -= 0.2;
+        nextCommand.pose.pose.position.z += 0.1;
+        nextCommand.requested_state = RobotState::Pick;
+        ctx.step = 5;
+        return nextCommand;
+    }
+    if (ctx.step == 5)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::ClearApplePose;
+        nextCommand.requested_state = RobotState::ChutePrepare;
         ctx.step = 0;
         return nextCommand;
     }
@@ -191,40 +199,33 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
     return nextCommand;
 }
 
-RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
-{
-    if (ctx.state != RobotState::Retreat) throw std::runtime_error("Improper state!");
-    if(ctx.step == 0 && ctx.at_pose) 
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = ctx.target_pose;
-        nextCommand.pose.pose.position.x -= 0.2;
-        nextCommand.pose.pose.position.z += 0.1;
-        nextCommand.requested_state = RobotState::Retreat;
-        ctx.step = 1;
-        return nextCommand;
-    }
-    else
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::ChutePrepare;
-        ctx.step = 0;
-        return nextCommand;
-    }
-}
-
 RobotCommand StateMachine::handleQRScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::QRScan) throw std::runtime_error("Improper state!");
-    if (ctx.step == 0)
+    if (ctx.move_pipe_invalid)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = ctx.scan_pose;
+        nextCommand.requested_state = RobotState::Hold;
+        ctx.step = 0;
+        return nextCommand;
+    }
+    if (ctx.step == 0)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::QueueAsyncPose;
         nextCommand.pose = getPoseForState(ctx);
         nextCommand.requested_state = RobotState::QRScan;
         ctx.step = 1;
+        return nextCommand;
+    }
+    if (ctx.step == 1)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::AwaitAsyncExec;
+        nextCommand.requested_state = RobotState::QRScan;
+        ctx.step = 2;
         return nextCommand;
     }
     if (!timeout_elapsed(ctx.last_qr_scan, std::chrono::minutes(3)))
@@ -301,16 +302,15 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
     if (ctx.state != RobotState::Chute) throw std::runtime_error("Improper state!");
     if (ctx.step == 0) {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
+        nextCommand.type = CommandType::QueueAsyncPose;
         nextCommand.pose = getPoseForState(ctx);
         nextCommand.requested_state = RobotState::Chute;
-        ctx.step = 2;
+        ctx.step = 1;
         return nextCommand;
     }
     if (ctx.step == 1) {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = getPoseForState(ctx);
+        nextCommand.type = CommandType::AwaitAsyncExec;
         nextCommand.requested_state = RobotState::Chute;
         ctx.step = 2;
         return nextCommand;
@@ -373,7 +373,7 @@ RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
     if (ctx.vision_scan_available && ctx.step == 1) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = ctx.target_pose;
+        nextCommand.pose = ctx.scan_pose;
         nextCommand.requested_state = RobotState::HeatScan;
         ctx.step = 2;
         return nextCommand;

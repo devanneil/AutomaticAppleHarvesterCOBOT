@@ -31,9 +31,9 @@ private:
 
     RobotCommand handleMonitor(RobotContext& ctx);
     RobotCommand handleHold(RobotContext& ctx);
-    RobotCommand handleApproach(RobotContext& ctx);
+    // RobotCommand handleApproach(RobotContext& ctx);
     RobotCommand handlePick(RobotContext& ctx);
-    RobotCommand handleRetreat(RobotContext& ctx);
+    // RobotCommand handleRetreat(RobotContext& ctx);
     RobotCommand handleQRScan(RobotContext& ctx);
     RobotCommand handleQRSearch(RobotContext& ctx);
     RobotCommand handleChutePrepare(RobotContext& ctx);

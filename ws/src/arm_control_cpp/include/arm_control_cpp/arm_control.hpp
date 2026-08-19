@@ -2,6 +2,10 @@
 #include <memory>
 #include <chrono>
 #include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_ros/transform_listener.h>
@@ -26,6 +30,11 @@
 #include "state_machine.hpp"
 
 class TestArmController;
+struct BatchTrajectory
+{
+    std::shared_ptr<robot_trajectory::RobotTrajectory> available_trajectory_;
+    int command_count_ = 0;
+};
 
 class ArmController : public rclcpp::Node
 {
@@ -53,9 +62,10 @@ private:
         const geometry_msgs::msg::PoseStamped& target_pose,
         const std::string& end_effector
     );
-    moveit::core::RobotState stateFromTrajectoryEnd(
-        const moveit_msgs::msg::RobotTrajectory& trajectory
-    );
+    void queuePose(const geometry_msgs::msg::PoseStamped& pose);
+    bool awaitAsyncMovementExecution();
+    void _planProducerThread();
+    void _planExecutorThread();
     void stopArm();
 
     // void executePlanService(
@@ -116,6 +126,7 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
 
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
+    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> plan_group_;
     // moveit::planning_interface::MoveGroupInterface::Plan plan;
 
     std::shared_ptr<moveit_visual_tools::MoveItVisualTools> visual_tools_;
@@ -128,6 +139,19 @@ private:
 
     rclcpp::Client<apple_interfaces::srv::ScanPoseRequest>::SharedPtr scan_pose_client_;
     rclcpp::Publisher<std_msgs::msg::UInt32>::SharedPtr scan_pose_clear_pub_;
+
+    std::thread producer_thread_;
+    std::thread consumer_thread_;
+    std::mutex queue_mtx_;
+    std::mutex plan_mtx_;
+    std::queue<geometry_msgs::msg::PoseStamped> pose_queue_;
+    std::condition_variable available_pose_cv_;
+    BatchTrajectory latest_trajectory_batch_;
+    std::condition_variable available_trajectory_cv_;
+    std::condition_variable movement_pipeline_cv_;
+    std::unique_ptr<moveit::core::RobotState> planned_state_;
+    std::atomic<int> active_command_count_ = 0;
+    std::atomic<bool> pipeline_valid_ = true;
 
     int vacuum_consensus_count_ = 0;
     uint8_t latest_vacuum_state_ = 0;

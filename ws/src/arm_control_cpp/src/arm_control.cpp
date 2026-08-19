@@ -49,7 +49,6 @@ ArmController::ArmController() : Node("arm_controller")
     scan_pose_clear_pub_ = create_publisher<std_msgs::msg::UInt32>("/scout1_cam/clear_pose", 10);
 
     context_.state = RobotState::Monitor;
-    context_.planning_group = "arm_1";
     context_.last_state = std::chrono::steady_clock::now();
     context_.last_qr_scan = std::chrono::steady_clock::time_point::max();
     context_.suction_state = false;
@@ -58,11 +57,15 @@ ArmController::ArmController() : Node("arm_controller")
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 }
 ArmController::~ArmController() {
+    producer_thread_.join();
+    consumer_thread_.join();
     stopArm();
 }
 void ArmController::initializeMoveIt() 
 {
     move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(
+        shared_from_this(), "arm_1");
+    plan_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(
         shared_from_this(), "arm_1");
     visual_tools_ = std::make_shared<moveit_visual_tools::MoveItVisualTools>(
         shared_from_this(),
@@ -81,6 +84,15 @@ void ArmController::initializeMoveIt()
         "EEF link: %s",
         move_group_->getEndEffectorLink().c_str());
 
+    // Initialize moveit threads after move_group
+    planned_state_ = std::make_unique<moveit::core::RobotState>(*move_group_->getCurrentState());
+    pose_queue_ = std::queue<geometry_msgs::msg::PoseStamped>();
+    latest_trajectory_batch_.available_trajectory_ =
+        std::make_shared<robot_trajectory::RobotTrajectory>(
+            plan_group_->getRobotModel(),
+            "arm_1");
+    producer_thread_ = std::thread(&ArmController::_planProducerThread, this);
+    consumer_thread_ = std::thread(&ArmController::_planExecutorThread, this);
     // createQRScan();
     // auto start = std::chrono::steady_clock::now();
     // while(!timeout_elapsed(start, std::chrono::seconds(5)))
@@ -98,71 +110,27 @@ void ArmController::initializeMoveIt()
 }
 void ArmController::test_function()
 {
-    robot_trajectory::RobotTrajectory total_traj(move_group_->getRobotModel(), "arm_1");
-    
+    auto home_pose = getPoseForState(context_);
     context_.state = RobotState::QRScan;
-    auto pose = getPoseForState(context_);
-    moveit::core::RobotState current_state = *move_group_->getCurrentState();
-    auto plan = planMotion(current_state, pose, "suction_link");
-    if(plan)
+    auto qr_pose = getPoseForState(context_);
+    for(int i = 0; i < 20; i++)
     {
-        const auto &traj = (*plan).trajectory_.joint_trajectory;
-        robot_trajectory::RobotTrajectory robot_traj(move_group_->getRobotModel(), "arm_1");
-        robot_traj.setRobotTrajectoryMsg(current_state, (*plan).trajectory_);
-        RCLCPP_INFO(
-            get_logger(),
-            "Trajectory: %zu points, %zu joints",
-            traj.points.size(),
-            traj.joint_names.size());
-        total_traj.append(robot_traj, 0);
-    } else 
-    {
-        RCLCPP_ERROR(get_logger(), "No plan given!");
+        queuePose(qr_pose);
+        queuePose(home_pose);
+        rclcpp::sleep_for(std::chrono::milliseconds(500));
+        if(!pipeline_valid_) break;
     }
 
-    context_.state = RobotState::Chute;
-    auto chute_pose = getPoseForState(context_);
-    const moveit::core::RobotState& qr_state = total_traj.getLastWayPoint();
-    plan = planMotion(qr_state, chute_pose, "suction_link");
-    if(plan)
+    awaitAsyncMovementExecution();
+    if(pipeline_valid_)
     {
-        const auto &traj = (*plan).trajectory_.joint_trajectory;
-        robot_trajectory::RobotTrajectory robot_traj(move_group_->getRobotModel(), "arm_1");
-        robot_traj.setRobotTrajectoryMsg(qr_state, (*plan).trajectory_);
-        RCLCPP_INFO(
-            get_logger(),
-            "Trajectory: %zu points, %zu joints",
-            traj.points.size(),
-            traj.joint_names.size());
-        total_traj.append(robot_traj, 0);
-    } else 
+        RCLCPP_INFO(get_logger(), "Movement pipeline completed!");
+    }
+    else
     {
-        RCLCPP_ERROR(get_logger(), "No plan given!");
+        RCLCPP_ERROR(get_logger(), "Movement error!");
     }
 
-    auto home_pose = move_group_->getCurrentPose("suction_link");
-    const moveit::core::RobotState& new_state = total_traj.getLastWayPoint();
-    plan = planMotion(new_state, home_pose, "suction_link");
-    if(plan)
-    {
-        const auto &traj = (*plan).trajectory_.joint_trajectory;
-        robot_trajectory::RobotTrajectory robot_traj(move_group_->getRobotModel(), "arm_1");
-        robot_traj.setRobotTrajectoryMsg(new_state, (*plan).trajectory_);
-        RCLCPP_INFO(
-            get_logger(),
-            "Trajectory: %zu points, %zu joints",
-            traj.points.size(),
-            traj.joint_names.size());
-        total_traj.append(robot_traj, 0);
-    } else 
-    {
-        RCLCPP_ERROR(get_logger(), "No plan given!");
-    }
-
-    moveit_msgs::msg::RobotTrajectory new_traj_msg;
-    total_traj.getRobotTrajectoryMsg(new_traj_msg);
-    // Execute the modified trajectory
-    move_group_->execute(new_traj_msg);
     throw std::runtime_error("testing");
 }
 // void ArmController::appleCallback(
@@ -287,6 +255,47 @@ bool ArmController::moveToPose(
     const std::string end_effector = "suction_link"
     )
 {   
+    // Reset planning/execution state.
+    {
+        std::scoped_lock lock(queue_mtx_, plan_mtx_);
+
+        // Clear queued commands.
+        std::queue<geometry_msgs::msg::PoseStamped> empty;
+        std::swap(pose_queue_, empty);
+
+        // Reset planner state.
+        if (plan_group_)
+        {
+            latest_trajectory_batch_.available_trajectory_ =
+                std::make_shared<robot_trajectory::RobotTrajectory>(
+                    plan_group_->getRobotModel(),
+                    "arm_1");
+            latest_trajectory_batch_.command_count_ = 0;
+        }
+
+        if (move_group_)
+        {
+            planned_state_ =
+                std::make_unique<moveit::core::RobotState>(
+                    *move_group_->getCurrentState());
+        }
+
+        // Reset completion state.
+        active_command_count_ = 0;
+
+        // Clear MoveIt targets.
+        if (move_group_)
+        {
+            move_group_->clearPoseTargets();
+            move_group_->setStartStateToCurrentState();
+        }
+    }
+
+    // Wake anything waiting for work/state changes.
+    available_pose_cv_.notify_all();
+    available_trajectory_cv_.notify_all();
+    movement_pipeline_cv_.notify_all();
+    
     if (!move_group_)
     {
         RCLCPP_WARN(
@@ -372,7 +381,7 @@ bool ArmController::moveToPose(
         visual_tools_->prompt("Execute planned trajectory?");
 
     auto result = move_group_->execute(plan);
-
+    planned_state_ = std::make_unique<moveit::core::RobotState>(*move_group_->getCurrentState());
     RCLCPP_INFO(get_logger(),
             "Execute returned %d",
             result.val);
@@ -387,7 +396,11 @@ bool ArmController::moveToPose(
         //throw std::runtime_error("Arm control execute failure!");
         return false;
     }
-
+    pipeline_valid_ = true;
+    {
+        std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+        context_.move_pipe_invalid = false;
+    }
     return true;
 }
 std::optional<moveit::planning_interface::MoveGroupInterface::Plan> ArmController::planMotion(
@@ -399,16 +412,6 @@ std::optional<moveit::planning_interface::MoveGroupInterface::Plan> ArmControlle
     try
     {
         moveit::core::RobotState state = start_state;
-
-        const auto* joint_model_group = move_group_->getRobotModel()->getJointModelGroup("arm_1");
-        const std::vector<std::string>& joint_names = joint_model_group->getVariableNames();
-
-        std::vector<double> joint_values;
-        start_state.copyJointGroupPositions(joint_model_group, joint_values);
-        for (std::size_t i = 0; i < joint_names.size(); ++i)
-        {
-        RCLCPP_INFO(get_logger(), "Joint %s: %f", joint_names[i].c_str(), joint_values[i]);
-        }
 
         // Make sure all link transforms have been recomputed
         state.update();
@@ -442,48 +445,36 @@ std::optional<moveit::planning_interface::MoveGroupInterface::Plan> ArmControlle
         start_pose.header.frame_id = "base_link";
         logPose("Start pose for plan: ", start_pose);
         auto bbox = generateBoundingBox(start_pose.pose, target_pose.pose);
-        move_group_->clearPoseTargets();
-        move_group_->setStartState(state);
-        if(!move_group_->setPoseTarget(target_pose, end_effector))
+        plan_group_->clearPoseTargets();
+        plan_group_->setStartState(state);
+        if(!plan_group_->setPoseTarget(target_pose, end_effector))
         {
             RCLCPP_ERROR(get_logger(), "Failed to set target pose!");
             return std::nullopt;
         }
-        move_group_->setWorkspace(
+        plan_group_->setWorkspace(
             bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5]
         );
 
         bool planned = false;
         moveit::planning_interface::MoveGroupInterface::Plan plan;
-        for(int i = 0; i < 3; i++)
+        plan_group_->setPlanningPipelineId("ompl");
+        plan_group_->setPlannerId("RRTConnectkConfigDefault");
+        plan_group_->setPlanningTime(0.5);
+        plan_group_->setNumPlanningAttempts(1);
+
+        auto result = plan_group_->plan(plan);
+
+        planned = (result == moveit::core::MoveItErrorCode::SUCCESS);
+
+        if (!planned)
         {
-            move_group_->setPlanningPipelineId("ompl");
-            move_group_->setPlannerId("RRTstar");
-            move_group_->setPlanningTime(0.7);
-            move_group_->setNumPlanningAttempts(3);
-
-            auto result = move_group_->plan(plan);
-
-            planned = (result == moveit::core::MoveItErrorCode::SUCCESS);
-
-            if (!planned)
-            {
-                RCLCPP_WARN(get_logger(), "Planning failed.");
-                RCLCPP_ERROR(
-                    get_logger(),
-                    "MoveIt plan() returned: %d",
-                    result.val);
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        if(!planned)
-        {
-            RCLCPP_ERROR(get_logger(), "Failed to plan after multiple attempts!");
-            return std::nullopt;
+            RCLCPP_WARN(get_logger(), "Planning failed.");
+            RCLCPP_ERROR(
+                get_logger(),
+                "MoveIt plan() returned: %d",
+                result.val);
+            return {};
         }
 
         return plan;
@@ -502,6 +493,7 @@ void ArmController::stopArm() {
     move_group_->clearPoseTargets();
     move_group_->setStartStateToCurrentState();
 }
+
 
 void ArmController::controlLoop()
 {   
@@ -569,6 +561,14 @@ void ArmController::controlLoop()
             RCLCPP_INFO(get_logger(), "Get Next Scan Pose Command");
             getScanPose();
             break;
+        case CommandType::QueueAsyncPose:
+            RCLCPP_INFO(get_logger(), "Queue async exec command!");
+            queuePose(cmd.pose);
+            break;
+        case CommandType::AwaitAsyncExec:
+            RCLCPP_INFO(get_logger(), "Await async exec command!");
+            if(!awaitAsyncMovementExecution()) return; //Return on false, node shut down
+            break;
         default:
             RCLCPP_INFO(get_logger(), "No command specified!");
             rclcpp::sleep_for(std::chrono::milliseconds(500));
@@ -581,7 +581,185 @@ void ArmController::controlLoop()
     }
     busy_ = false;
 }
+void ArmController::queuePose(const geometry_msgs::msg::PoseStamped& pose)
+{
+    if(active_command_count_ >=5 )
+    {
+        if(!awaitAsyncMovementExecution()) return;
+    }
+    std::lock_guard<std::mutex> lock(queue_mtx_);
+    pose_queue_.push(pose);
+    active_command_count_++;
+    available_pose_cv_.notify_all();
+}
+bool ArmController::awaitAsyncMovementExecution()
+{
+    // Wait on movement_pipeline_complete_
+    std::unique_lock<std::mutex> lock(plan_mtx_);
+    movement_pipeline_cv_.wait(lock, [this] {
+        return active_command_count_ == 0 || !rclcpp::ok() || !pipeline_valid_;
+    });
 
+    if (!rclcpp::ok() || !pipeline_valid_) {
+        return false;
+    }
+    return true;
+}
+void ArmController::_planProducerThread()
+{
+    while(rclcpp::ok())
+    {   
+        if(!plan_group_)
+        {
+            continue;
+        }
+        std::unique_ptr<moveit::core::RobotState> latest_state;
+        {   
+            std::unique_lock<std::mutex> lock(plan_mtx_);
+            if(active_command_count_ == 0)
+            {
+                latest_state = std::make_unique<moveit::core::RobotState>(*move_group_->getCurrentState());
+            }
+            else
+            {
+                latest_state = std::make_unique<moveit::core::RobotState>(*planned_state_);
+            }
+        }
+        geometry_msgs::msg::PoseStamped pose;
+        {
+            std::unique_lock<std::mutex> lock(queue_mtx_);
+
+            available_pose_cv_.wait(lock, [this] {return !this->pose_queue_.empty() || !rclcpp::ok();});
+            if(!rclcpp::ok()) return;
+            RCLCPP_INFO(
+                get_logger(),
+                "[PRODUCER] Got pose. Starting plan.");
+
+            pose = pose_queue_.front();
+            pose_queue_.pop();
+        }
+        logPose("Plan producer pose: ", pose);
+
+        auto plan = planMotion(*latest_state, pose, "suction_link");
+        if(plan)
+        {
+            const auto &traj = (*plan).trajectory_.joint_trajectory;
+            robot_trajectory::RobotTrajectory robot_traj(move_group_->getRobotModel(), "arm_1");
+            robot_traj.setRobotTrajectoryMsg(*latest_state, (*plan).trajectory_);
+            {
+                std::unique_lock<std::mutex> lock(plan_mtx_);
+                latest_trajectory_batch_.available_trajectory_->append(robot_traj, 0);
+                latest_trajectory_batch_.command_count_++;
+                planned_state_ = std::make_unique<moveit::core::RobotState>(latest_trajectory_batch_.available_trajectory_->getLastWayPoint());
+            }
+            RCLCPP_INFO(
+                get_logger(),
+                "[PRODUCER] Added command. Batch commands=%zu",
+                latest_trajectory_batch_.command_count_);
+        } else 
+        {
+            RCLCPP_ERROR(get_logger(), "No plan given!");
+        }
+
+        available_trajectory_cv_.notify_all();
+    }
+}
+void ArmController::_planExecutorThread()
+{
+    while (rclcpp::ok())
+    {
+        if(!move_group_)
+        {
+            continue;
+        }
+        std::shared_ptr<robot_trajectory::RobotTrajectory> trajectory;
+        int traj_command_count = 0;
+        {
+            std::unique_lock<std::mutex> lock(plan_mtx_);
+            RCLCPP_INFO(
+                get_logger(),
+                "[EXECUTOR] Waiting for trajectory...");
+            available_trajectory_cv_.wait(lock, [this] {
+                return
+                    (latest_trajectory_batch_.available_trajectory_ &&
+                    latest_trajectory_batch_.available_trajectory_->getWayPointCount() > 0
+                    && pipeline_valid_)
+                    || !rclcpp::ok();
+            });
+            if (!rclcpp::ok())
+                return;
+            RCLCPP_INFO(
+                get_logger(),
+                "[EXECUTOR] Got trajectory. Commands=%zu",
+                latest_trajectory_batch_.command_count_);
+            // HANDOFF OWNERSHIP
+            trajectory = std::move(latest_trajectory_batch_.available_trajectory_);
+            traj_command_count = latest_trajectory_batch_.command_count_;
+            latest_trajectory_batch_.command_count_ = 0;
+
+            // Planner gets a fresh trajectory.
+            latest_trajectory_batch_.available_trajectory_ =
+                std::make_shared<robot_trajectory::RobotTrajectory>(
+                    plan_group_->getRobotModel(),
+                    "arm_1");
+        }
+
+        // --------------------------------------------------
+        // No mutex held from this point onward.
+        // Planner can continue working.
+        // --------------------------------------------------
+
+        moveit_msgs::msg::RobotTrajectory msg;
+        trajectory->getRobotTrajectoryMsg(msg);
+
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        plan.trajectory_ = msg;
+        RCLCPP_INFO(
+            get_logger(),
+            "[EXECUTOR] Executing trajectory...");
+        auto result = move_group_->execute(plan);
+        active_command_count_ -= traj_command_count;
+        int cmd_count = active_command_count_;
+        RCLCPP_INFO(
+            get_logger(),
+            "[EXECUTOR] Remaining commands: %d", cmd_count
+        );
+        RCLCPP_INFO(
+            get_logger(),
+            "[EXECUTOR] Execution complete.");
+        if (result != moveit::core::MoveItErrorCode::SUCCESS)
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "[EXECUTOR] Execution failed: %d. Resetting pipeline.",
+                result.val);
+            
+            // The predicted state is no longer trustworthy.
+            active_command_count_ = 0;
+            planned_state_.reset();
+
+            // Discard any trajectories that were planned
+            // against the now-invalid predicted state.
+            latest_trajectory_batch_.available_trajectory_ =
+                std::make_shared<robot_trajectory::RobotTrajectory>(
+                    plan_group_->getRobotModel(),
+                    "arm_1");
+
+            latest_trajectory_batch_.command_count_ = 0;
+
+            pipeline_valid_ = false;
+            {
+                std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+                context_.move_pipe_invalid = true;
+            }
+
+            // std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // stopArm();
+        }
+        
+        movement_pipeline_cv_.notify_all();
+    }
+}
 bool ArmController::isDuplicatePose(const geometry_msgs::msg::PoseStamped::SharedPtr& msg)
 {
     constexpr double POS_EPS = 0.01; // 1 cm tolerance
@@ -839,7 +1017,6 @@ geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
     }
     return *target;
 }
-
 void ArmController::updateBinPose(geometry_msgs::msg::PoseStamped qr_pose)
 {
     geometry_msgs::msg::TransformStamped t_dummy_qr;
