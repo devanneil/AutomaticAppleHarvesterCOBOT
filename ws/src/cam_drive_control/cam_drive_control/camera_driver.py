@@ -728,9 +728,9 @@ class CameraDriver(Node):
         # ------------------------------------------------------------
 
         surface_point = np.array([
-            center[0] - radius,
+            center[0],
             center[1],
-            center[2]
+            center[2] - radius
         ])
 
         print(
@@ -759,6 +759,12 @@ class CameraDriver(Node):
         surface_pose.position.y = float(surface_point[1])
         surface_pose.position.z = float(surface_point[2])
 
+        if surface_pose.position.z < 0:
+            return False, None
+        
+        if not self.poseInBox(surface_pose, cons):
+            return False, None
+
         transformedPose = tf2_geometry_msgs.do_transform_pose(
             surface_pose,
             cons.tf
@@ -776,9 +782,9 @@ class CameraDriver(Node):
         pose.header.frame_id = "base_link"
 
         # Your existing tool offset
-        pose.pose.position.x += 0.0
+        pose.pose.position.x += 0.05
         pose.pose.position.y -= 0.03
-        pose.pose.position.z += 0.03
+        pose.pose.position.z += 0.09
 
         pose.pose.orientation.x = 0.5
         pose.pose.orientation.y = -0.5
@@ -786,3 +792,22 @@ class CameraDriver(Node):
         pose.pose.orientation.w = -0.5
 
         return True, pose
+
+    def poseInBox(self, pose : Pose, cons : ConsensusStruct):
+        x = pose.position.x
+        y = pose.position.y
+        z = pose.position.z
+
+        u = self.fx * x / z + self.cx
+        v = self.fy * y / z + self.cy
+
+        x1 = int(min(cons.u1, cons.u2)) + 10
+        y1 = int(min(cons.v1, cons.v2)) - 10
+        x2 = int(max(cons.u1, cons.u2)) + 10
+        y2 = int(max(cons.v1, cons.v2)) - 10
+
+        if x1 < u < x2 and y1 < v < y2:
+            return True
+        else:
+            self.get_logger().error("Pose outside of consensus!")
+            return False
