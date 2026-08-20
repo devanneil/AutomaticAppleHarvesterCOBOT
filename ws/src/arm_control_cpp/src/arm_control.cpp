@@ -113,12 +113,15 @@ void ArmController::test_function()
     auto home_pose = getPoseForState(context_);
     context_.state = RobotState::QRScan;
     auto qr_pose = getPoseForState(context_);
+    context_.state = RobotState::Chute;
+    auto chute_pose = getPoseForState(context_);
+    context_.state = RobotState::Monitor;
     for(int i = 0; i < 20; i++)
     {
-        queuePose(qr_pose);
+        queuePose(chute_pose);
         queuePose(home_pose);
         rclcpp::sleep_for(std::chrono::milliseconds(500));
-        if(!pipeline_valid_) break;
+        if(!pipeline_valid_) moveToPose(home_pose, false, "suction_link");
     }
 
     awaitAsyncMovementExecution();
@@ -290,7 +293,6 @@ bool ArmController::moveToPose(
             move_group_->setStartStateToCurrentState();
         }
     }
-
     // Wake anything waiting for work/state changes.
     available_pose_cv_.notify_all();
     available_trajectory_cv_.notify_all();
@@ -320,7 +322,7 @@ bool ArmController::moveToPose(
     move_group_->setWorkspace(
         bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5]
     );
-
+    pipeline_valid_ = false;
     bool planned;
     moveit::planning_interface::MoveGroupInterface::Plan plan;
     for(int i = 0; i < 3; i++)
@@ -459,7 +461,7 @@ std::optional<moveit::planning_interface::MoveGroupInterface::Plan> ArmControlle
         bool planned = false;
         moveit::planning_interface::MoveGroupInterface::Plan plan;
         plan_group_->setPlanningPipelineId("ompl");
-        plan_group_->setPlannerId("RRTConnectkConfigDefault");
+        plan_group_->setPlannerId("RRTConnect");
         plan_group_->setPlanningTime(0.5);
         plan_group_->setNumPlanningAttempts(1);
 
@@ -474,7 +476,7 @@ std::optional<moveit::planning_interface::MoveGroupInterface::Plan> ArmControlle
                 get_logger(),
                 "MoveIt plan() returned: %d",
                 result.val);
-            return {};
+            return std::nullopt;
         }
 
         return plan;
@@ -717,6 +719,7 @@ void ArmController::_planExecutorThread()
         RCLCPP_INFO(
             get_logger(),
             "[EXECUTOR] Executing trajectory...");
+        if (!pipeline_valid_) continue;
         auto result = move_group_->execute(plan);
         active_command_count_ -= traj_command_count;
         int cmd_count = active_command_count_;
@@ -733,7 +736,7 @@ void ArmController::_planExecutorThread()
                 get_logger(),
                 "[EXECUTOR] Execution failed: %d. Resetting pipeline.",
                 result.val);
-            
+            stopArm();
             // The predicted state is no longer trustworthy.
             active_command_count_ = 0;
             planned_state_.reset();

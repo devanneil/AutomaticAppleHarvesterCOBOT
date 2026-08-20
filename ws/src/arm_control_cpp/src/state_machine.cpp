@@ -286,8 +286,10 @@ RobotCommand StateMachine::handleChutePrepare(RobotContext &ctx)
     if (timeout_elapsed(ctx.last_qr_scan, std::chrono::minutes(3)))
     {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::QRScan;
-        nextCommand.requested_state = RobotState::QRScan;
+        // nextCommand.type = CommandType::QRScan;
+        // nextCommand.requested_state = RobotState::QRScan;
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Chute;
         return nextCommand;
     } else
     {
