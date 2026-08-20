@@ -58,7 +58,7 @@ class CameraDriver(Node):
     def __init__(self):
         super().__init__('camera_driver')
 
-        self.declare_parameter('model_name', 'wsu-v9c.pt')
+        self.declare_parameter('model_name', 'wsu-v8m.pt')
 
         self.apple_model_name = self.get_parameter('model_name').value
 
