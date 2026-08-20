@@ -35,6 +35,9 @@ int main(int argc, char * argv[])
     executor.add_node(node);
 
     auto spinner = std::thread([&executor]() {executor.spin(); });
+
+    node->initializeMoveIt();
+
     // Arbitrary sleep for service initialization
     rclcpp::sleep_for(std::chrono::milliseconds(500));
 

@@ -55,8 +55,8 @@ int main(int argc, char * argv[])
         }
     }
     // Iterate state from seeded context
-    RCLCPP_WARN(node->get_logger(), "Inspect the bin in RVIZ. Is it correctly placed?");
-    node->holdForUser();
+    // RCLCPP_WARN(node->get_logger(), "Inspect the bin in RVIZ. Is it correctly placed?");
+    // node->holdForUser();
 
     while (node->context_.state != RobotState::Monitor)
     {
