@@ -321,6 +321,7 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
         return nextCommand;
     }
     if (ctx.step == 2) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Sleep for apple to settle
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
         //nextCommand.requested_state = RobotState::ChuteRetreat;
