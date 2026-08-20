@@ -13,6 +13,7 @@
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 #include <std_msgs/msg/u_int32.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include "apple_interfaces/srv/suction_command.hpp"
 #include "apple_interfaces/srv/update_bin.hpp"
 #include "apple_interfaces/srv/scan_pose_request.hpp"

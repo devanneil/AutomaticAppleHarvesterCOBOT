@@ -20,6 +20,7 @@ std::shared_ptr<TestArmController> node;
 
 
 void sigintHandler(int);
+bool qr_ready_check();
 
 int main(int argc, char * argv[])
 {
@@ -29,6 +30,8 @@ int main(int argc, char * argv[])
     rclcpp::init(argc, argv);
 
     std::signal(SIGINT, sigintHandler);
+
+    assert(qr_ready_check() && "Failed to pass QR ready check! Scan the QR Pose again!" );
 
     node = std::make_shared<TestArmController>();
 
@@ -55,6 +58,73 @@ int main(int argc, char * argv[])
     rclcpp::shutdown();
 
     return 0;
+}
+
+bool qr_ready_check()
+{
+    if (!rclcpp::ok())
+        return false;
+
+    auto qr_node =
+        std::make_shared<rclcpp::Node>("qr_check_node");
+
+    std::atomic<bool> received{false};
+    std::atomic<bool> valid{false};
+
+    auto qr_valid_sub =
+        qr_node->create_subscription<std_msgs::msg::Bool>(
+            "/qr_valid",
+            rclcpp::QoS(1)
+                .reliable()
+                .transient_local(),
+            [&received, &valid](
+                const std_msgs::msg::Bool::SharedPtr msg)
+            {
+                valid.store(msg->data);
+                received.store(true);
+            });
+
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(qr_node);
+
+    const auto timeout =
+        std::chrono::steady_clock::now() +
+        std::chrono::seconds(2);
+
+    while (rclcpp::ok() &&
+           !received.load() &&
+           std::chrono::steady_clock::now() < timeout)
+    {
+        executor.spin_some();
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(10));
+    }
+
+    executor.remove_node(qr_node);
+
+    if (!received.load())
+    {
+        RCLCPP_ERROR(
+            qr_node->get_logger(),
+            "QR check failed: no /qr_valid state received.");
+
+        return false;
+    }
+
+    if (valid.load())
+    {
+        RCLCPP_INFO(
+            qr_node->get_logger(),
+            "Passed the QR check!");
+
+        return true;
+    }
+
+    RCLCPP_ERROR(
+        qr_node->get_logger(),
+        "Failed the QR check: QR state is invalid.");
+
+    return false;
 }
 
 void sigintHandler(int)

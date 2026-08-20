@@ -8,6 +8,7 @@
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <moveit_msgs/msg/attached_collision_object.hpp>
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
+#include <std_msgs/msg/bool.hpp>
 
 #include "apple_interfaces/srv/update_bin.hpp"
 
@@ -41,6 +42,16 @@ public:
             std::chrono::milliseconds(50),   // 20 Hz
             std::bind(&BinManager::publish_bin_tf, this));
 
+        qr_valid_pub_ = create_publisher<std_msgs::msg::Bool>(
+            "/qr_valid",
+            rclcpp::QoS(1)
+                .reliable()
+                .transient_local());
+
+        std_msgs::msg::Bool false_msg;
+        false_msg.data = false;
+        qr_valid_pub_->publish(false_msg);
+
     }
 
 private:
@@ -48,6 +59,7 @@ private:
     std::vector<double> bin_pose;
     bool bin_initialized = false;
     rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_diff_publisher_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr qr_valid_pub_;
     rclcpp::Service<apple_interfaces::srv::UpdateBin>::SharedPtr update_bin_srv_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr tf_timer_;
@@ -150,10 +162,18 @@ private:
             }
             apply_bin();
             response->success = true;
+
+            std_msgs::msg::Bool true_msg;
+            true_msg.data = true;
+            qr_valid_pub_->publish(true_msg);
         }
         catch (std::exception& e)
         {
             response->success = false;
+
+            std_msgs::msg::Bool false_msg;
+            false_msg.data = false;
+            qr_valid_pub_->publish(false_msg);
         }
     }
 };
