@@ -1,0 +1,2 @@
+@echo off
+wt.exe wsl.exe bash -ic "cd /home/rnall/AutomaticAppleHarvesterCOBOT/ws && source /opt/ros/humble/setup.bash && source install/setup.bash && ros2 run arm_control_cpp suction_test && read -n 1 -p 'Press any key to close'"
