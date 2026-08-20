@@ -47,7 +47,7 @@ int main(int argc, char * argv[])
     while (node->context_.state != RobotState::Chute)
     {
         node->controlLoop();
-        if(timeout_elapsed(start_time, std::chrono::seconds(15)))
+        if(timeout_elapsed(start_time, std::chrono::seconds(30)))
         {
             node->context_.state = RobotState::Monitor;
             node->controlLoop();
@@ -63,6 +63,7 @@ int main(int argc, char * argv[])
         node->controlLoop();
     }
     node->controlLoop();
+    node->disableVacuum();
 
     executor.cancel();  
     spinner.join();

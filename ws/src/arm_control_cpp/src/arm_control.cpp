@@ -243,8 +243,8 @@ bool ArmController::moveToPose(
     {
         move_group_->setPlanningPipelineId("ompl");
         move_group_->setPlannerId("RRTstar");
-        move_group_->setPlanningTime(0.7);
-        move_group_->setNumPlanningAttempts(3);
+        move_group_->setPlanningTime(1.0);
+        move_group_->setNumPlanningAttempts(5);
 
         planned = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
 

@@ -6,7 +6,7 @@ RobotCommand StateMachine::update(RobotContext& ctx)
     if (ctx.move_command_fail) {
         // Move command fail handler
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::Monitor;
+        nextCommand.requested_state = RobotState::Hold;
         changeState(ctx, nextCommand.requested_state);
         ctx.move_command_fail = false; // Reset error bit to reeneter control loop
         return nextCommand;
@@ -285,8 +285,11 @@ RobotCommand StateMachine::handleChutePrepare(RobotContext &ctx)
     if (timeout_elapsed(ctx.last_qr_scan, std::chrono::minutes(3)))
     {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::QRScan;
-        nextCommand.requested_state = RobotState::QRScan;
+        // nextCommand.type = CommandType::QRScan;
+        // nextCommand.requested_state = RobotState::QRScan;
+        // Disable QR scan behaviour, no longer necessary
+        nextCommand.type = CommandType::None;
+        nextCommand.requested_state = RobotState::Chute;
         return nextCommand;
     } else
     {
@@ -300,13 +303,14 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Chute) throw std::runtime_error("Improper state!");
     if (ctx.step == 0) {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = getPoseForState(ctx);
-        nextCommand.pose.pose.position.z += 0.05;
-        nextCommand.requested_state = RobotState::Chute;
-        ctx.step = 2;
-        return nextCommand;
+        // RobotCommand nextCommand;
+        // nextCommand.type = CommandType::MoveArm;
+        // nextCommand.pose = getPoseForState(ctx);
+        // nextCommand.pose.pose.position.z += 0.05;
+        // nextCommand.requested_state = RobotState::Chute;
+        // ctx.step = 1;
+        // return nextCommand;
+        ctx.step = 1; // Skip this command
     }
     if (ctx.step == 1) {
         RobotCommand nextCommand;
@@ -319,7 +323,9 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
     if (ctx.step == 2) {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
-        nextCommand.requested_state = RobotState::ChuteRetreat;
+        //nextCommand.requested_state = RobotState::ChuteRetreat;
+        // Skip this state
+        nextCommand.requested_state = RobotState::Hold;
         ctx.step = 0;
         return nextCommand;
     }
