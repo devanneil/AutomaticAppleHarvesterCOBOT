@@ -58,6 +58,7 @@ inline const char* robotStateToString(RobotState state)
         case RobotState::QRSearch:       return "QRSearch";
         case RobotState::Chute:          return "Chute";
         case RobotState::ChuteRetreat:   return "ChuteRetreat";
+        case RobotState::ChutePrepare:   return "ChutePrepate";
         case RobotState::HeatScan:       return "HeatScan";
         case RobotState::CloseScan:      return "CloseScan";
         case RobotState::Error:          return "Error";

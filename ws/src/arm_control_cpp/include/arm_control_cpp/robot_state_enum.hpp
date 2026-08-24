@@ -55,7 +55,8 @@ enum class CommandType
     StopArm, // Halt movement
     VisionScan, // Refill consensus list
     QRScan,
-    GetNextScanPose
+    GetNextScanPose,
+    CartesianMove
 };
 
 struct RobotCommand
@@ -63,6 +64,7 @@ struct RobotCommand
     CommandType type = CommandType::None;
 
     geometry_msgs::msg::PoseStamped pose; // used if MoveArm
+    std::vector<geometry_msgs::msg::PoseStamped> waypoints; // used if CartesianMove
 
     RobotState requested_state;
 };

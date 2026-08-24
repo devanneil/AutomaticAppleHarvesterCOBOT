@@ -171,8 +171,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
     if (ctx.step == 2)
     {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = twistPick(ctx.target_pose);
+        nextCommand.type = CommandType::None;
         nextCommand.requested_state = RobotState::Retreat;
         ctx.step = 0;
         return nextCommand;
@@ -194,14 +193,16 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
 RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Retreat) throw std::runtime_error("Improper state!");
-    if(ctx.step == 0 && ctx.at_pose) 
+    if(ctx.step == 0) 
     {
         RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = ctx.target_pose;
-        nextCommand.pose.pose.position.x -= 0.2;
-        nextCommand.pose.pose.position.z += 0.1;
+        nextCommand.type = CommandType::CartesianMove;
+        nextCommand.waypoints = {twistPick(ctx.target_pose)};
         nextCommand.requested_state = RobotState::Retreat;
+        auto pose = ctx.target_pose;
+        pose.pose.position.x -= 0.2;
+        pose.pose.position.z += 0.1;
+        nextCommand.waypoints.push_back(pose);
         ctx.step = 1;
         return nextCommand;
     }

@@ -50,6 +50,8 @@ private:
     bool moveToPose(const geometry_msgs::msg::PoseStamped& target, bool blocking, std::string end_effector);
     void stopArm();
 
+    bool cartesianMove(const std::vector<geometry_msgs::msg::PoseStamped>& waypoints, std::string end_effector);
+
     // void executePlanService(
     //     const std::shared_ptr<rmw_request_id_t> request_header,
     //     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,

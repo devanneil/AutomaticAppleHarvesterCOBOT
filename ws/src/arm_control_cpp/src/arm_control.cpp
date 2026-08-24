@@ -324,6 +324,79 @@ void ArmController::stopArm() {
     move_group_->setStartStateToCurrentState();
 }
 
+bool ArmController::cartesianMove(
+    const std::vector<geometry_msgs::msg::PoseStamped>& waypoints, std::string end_effector)
+{
+    std::vector<geometry_msgs::msg::Pose> poses;
+
+    const std::string planning_frame =
+        move_group_->getPoseReferenceFrame();
+
+    for (const auto& pose_stamped : waypoints)
+    {
+        geometry_msgs::msg::PoseStamped transformed;
+
+        tf_buffer_->transform(
+            pose_stamped,
+            transformed,
+            planning_frame
+        );
+
+        poses.push_back(transformed.pose);
+    }
+    move_group_->setEndEffectorLink(end_effector);
+    moveit_msgs::msg::RobotTrajectory trajectory;
+
+    double fraction =
+        move_group_->computeCartesianPath(
+            poses,
+            0.005,
+            0.0,
+            trajectory,
+            true
+        );
+    
+    if (fraction < 0.99)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "Cartesian failed to plan. Completion: %.2f%%",
+            fraction * 100.0
+        );
+        RCLCPP_ERROR(
+            get_logger(),
+            "Running each cartesian point as OMPL"
+        );
+        for (auto p : waypoints)
+        {
+            if(!moveToPose(p))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    RCLCPP_INFO(
+        get_logger(),
+        "Cartesian path completion: %.2f%%",
+        fraction * 100.0
+    );
+    auto result = move_group_->execute(trajectory);
+
+    if (result != moveit::core::MoveItErrorCode::SUCCESS)
+    {
+        RCLCPP_ERROR(get_logger(), "Trajectory execution failed.");
+
+        stopArm();
+
+        //throw std::runtime_error("Arm control execute failure!");
+        return false;
+    }
+
+    return true;
+}
+
 void ArmController::controlLoop()
 {   
     if (break_)
@@ -390,6 +463,10 @@ void ArmController::controlLoop()
             RCLCPP_INFO(get_logger(), "Get Next Scan Pose Command");
             getScanPose();
             break;
+        case CommandType::CartesianMove:
+            RCLCPP_INFO(get_logger(), "Cartesian Move Command!");
+            context_.move_command_fail = !cartesianMove(cmd.waypoints, "suction_link");
+            break;
         default:
             RCLCPP_INFO(get_logger(), "No command specified!");
             rclcpp::sleep_for(std::chrono::milliseconds(500));
@@ -397,8 +474,16 @@ void ArmController::controlLoop()
     // Update context appropriately
     {
         std::lock_guard<std::mutex> lock(context_mutex_);
-        context_.at_pose =
-            poseEqual(move_group_->getCurrentPose("suction_link"), cmd.pose);
+        if (cmd.type != CommandType::CartesianMove)
+        {
+            context_.at_pose =
+                poseEqual(move_group_->getCurrentPose("suction_link"), cmd.pose);
+        }
+        else
+        {
+            context_.at_pose =
+                poseEqual(move_group_->getCurrentPose("suction_link"), cmd.waypoints.back());
+        }
     }
     busy_ = false;
 }

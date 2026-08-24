@@ -46,6 +46,13 @@ int main(int argc, char * argv[])
     // Create seeded context
     node->context_.state = RobotState::CloseScan;
 
+    std::cout << "\n====================================\n";
+    std::cout << " Demo is ready.\n";
+    std::cout << " Press ENTER to begin...\n";
+    std::cout << "====================================\n";
+
+    std::cin.get();
+
     while (node->context_.state != RobotState::Monitor)
     {
         node->controlLoop();
