@@ -515,6 +515,10 @@ class CameraDriver(Node):
 
         feedback_msg = VisionScan.Feedback()
         feedback_msg.success = True
+        world_locations = sorted(
+            world_locations,
+            key=lambda pose: pose.pose.position.x
+        )
         if goal.order == VisionScan.Goal.APPLE_SCAN:
             feedback_msg.apples = world_locations
         else:
@@ -526,6 +530,11 @@ class CameraDriver(Node):
         result.status = "Success"
 
         self.get_logger().info(f'Goal succeeded!')
+        now = self.get_clock().now()
+
+        age = (now - self.goal_stamp).nanoseconds / 1e9
+
+        self.get_logger().info(f"Goal time to complete: {age:.3f}s")
         return result
 
 
