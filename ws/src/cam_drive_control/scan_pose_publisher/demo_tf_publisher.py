@@ -1,93 +1,144 @@
 #!/usr/bin/env python3
+
+import sys
+import select
+import termios
+import tty
+
 import rclpy
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
-from geometry_msgs.msg import TransformStamped, PoseStamped
-from std_srvs.srv import Trigger
-import tf2_ros
-import math
-import time
-import threading
-import copy
 
-class DynamicTFPublisher(Node):
+from geometry_msgs.msg import TransformStamped
+from tf2_ros import TransformBroadcaster
+
+
+class InteractiveTF(Node):
+
     def __init__(self):
-        super().__init__('dynamic_map_tf_publisher')
-        self.target_pose_lock = threading.Lock()
-        # Create a TransformBroadcaster
-        self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
+        super().__init__('interactive_tf')
 
-        self.group_1 = ReentrantCallbackGroup()
+        self.tf_broadcaster = TransformBroadcaster(self)
+        self.tty = open('/dev/tty', 'r')
 
-        # Publish at 10 Hz
-        self.timer = self.create_timer(0.1, self.broadcast_timer_callback, callback_group=self.group_1)
-        self.srv = self.create_service(Trigger, 'move_robot', self.move_service_callback, callback_group=self.group_1)
+        # Parameters
+        self.parent_frame = "base_link"
 
-        self.current_pose = PoseStamped()
-        self.target_pose = PoseStamped()
+        self.child_frame = "map"
 
-    def shutdown(self):
-        if rclpy.ok():
-            rclpy.shutdown()
+        self.step = self.declare_parameter(
+            'step',
+            0.01
+        ).value
 
-    def broadcast_timer_callback(self):
-        step = 0.1
-        with self.target_pose_lock:
-            error = self.target_pose.pose.position.y - self.current_pose.pose.position.y
+        # Current pose
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
 
-        dy = max(min(error, step), -step)
+        self.timer = self.create_timer(
+            0.02,
+            self.timer_callback
+        )
 
-        self.current_pose.pose.position.y += dy
+    def timer_callback(self):
 
-        #self.get_logger().info(f"DX value: {dx}")
+        self.handle_keyboard()
 
-        t = TransformStamped()
+        transform = TransformStamped()
 
-        # Set header
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'map'       # Parent frame
-        t.child_frame_id = 'base_link'   # Child frame
+        transform.header.stamp = self.get_clock().now().to_msg()
+        transform.header.frame_id = self.parent_frame
+        transform.child_frame_id = self.child_frame
 
-        # Example: moving in a circle
-        t.transform.translation.x = 0.0
-        t.transform.translation.y = self.current_pose.pose.position.y
-        t.transform.translation.z = 0.0
+        transform.transform.translation.x = self.x
+        transform.transform.translation.y = self.y
+        transform.transform.translation.z = self.z
 
-        # No rotation (identity quaternion)
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = 0.0
-        t.transform.rotation.w = 1.0
+        # Identity rotation
+        transform.transform.rotation.x = 0.0
+        transform.transform.rotation.y = 0.0
+        transform.transform.rotation.z = 0.0
+        transform.transform.rotation.w = 1.0
 
-        # Publish the transform
-        self.tf_broadcaster.sendTransform(t)
+        self.tf_broadcaster.sendTransform(transform)
 
-    def move_service_callback(self, request, response):
-        with self.target_pose_lock:
-            self.target_pose = copy.deepcopy(self.current_pose)
-            self.target_pose.pose.position.y += 1.3589/4
-        response.success = True
-        return response
+    def handle_keyboard(self):
 
+        # Non-blocking keyboard read
+        if select.select([self.tty], [], [], 0)[0]:
+            key = self.tty.read(1)
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = DynamicTFPublisher()
+            # Arrow keys arrive as escape sequences:
+            # ESC [ A = Up
+            # ESC [ B = Down
+            # ESC [ C = Right
+            # ESC [ D = Left
 
-    # MultiThreadedExecutor with 8 worker threads
-    executor = MultiThreadedExecutor(num_threads=4)
+            if key == '\x1b':
 
-    # Add node to executor
-    executor.add_node(node)
+                if select.select([self.tty], [], [], 0)[0]:
+                    key += self.tty.read(1)
+
+                if select.select([self.tty], [], [], 0)[0]:
+                    key += self.tty.read(1)
+
+                if key == '\x1b[A':       # Up
+                    self.y -= self.step
+
+                elif key == '\x1b[B':     # Down
+                    self.y += self.step
+
+                # elif key == '\x1b[C':     # Right
+                #     self.y -= self.step
+
+                # elif key == '\x1b[D':     # Left
+                #     self.y += self.step
+
+            # elif key == 'w':
+            #     self.z += self.step
+
+            # elif key == 's':
+            #     self.z -= self.step
+
+            # elif key == 'q':
+            #     self.get_logger().info('Shutting down.')
+            #     rclpy.shutdown()
+
+            # self.get_logger().info(
+            #     f'Position: '
+            #     f'x={self.x:.3f}, '
+            #     f'y={self.y:.3f}, '
+            #     f'z={self.z:.3f}'
+            # )
+
+def main():
+
+    rclpy.init()
+
+    node = InteractiveTF()
+
+    old_settings = termios.tcgetattr(node.tty)
 
     try:
-        while rclpy.ok():
-            executor.spin_once()
+        tty.setcbreak(node.tty.fileno())
+
+        rclpy.spin(node)
+
     except KeyboardInterrupt:
-        node.shutdown()
+        pass
+
     finally:
+
+        termios.tcsetattr(
+            node.tty,
+            termios.TCSADRAIN,
+            old_settings
+        )
+
+        node.tty.close()
+
         node.destroy_node()
+
         if rclpy.ok():
             rclpy.shutdown()
 

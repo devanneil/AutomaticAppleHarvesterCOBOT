@@ -90,6 +90,7 @@ private:
     void updateBinPose(geometry_msgs::msg::PoseStamped qr_pose);
 
     void getScanPose();
+    void clearScanPose();
 
     bool block;
 

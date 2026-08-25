@@ -726,10 +726,6 @@ void ArmController::result_callback(
         std::lock_guard<std::mutex> ctx_lock(context_mutex_);
         context_.vision_scan_available = true;
     }
-    auto msg = std_msgs::msg::UInt32();
-    msg.data = last_scan_ID;
-    scan_pose_clear_pub_->publish(msg);
-    last_scan_ID = 0;
 }
 
 geometry_msgs::msg::PoseStamped ArmController::getNextPose() {
@@ -856,4 +852,12 @@ void ArmController::getScanPose()
     req->arm_num = 1;
     auto result = scan_pose_client_->async_send_request(req, response_received_callback);
     rclcpp::sleep_for(std::chrono::milliseconds(500));
+}
+
+void ArmController::clearScanPose()
+{
+    auto msg = std_msgs::msg::UInt32();
+    msg.data = last_scan_ID;
+    scan_pose_clear_pub_->publish(msg);
+    last_scan_ID = 0;
 }
