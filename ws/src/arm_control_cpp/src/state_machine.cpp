@@ -114,7 +114,7 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::HeatScan;
+        nextCommand.requested_state = RobotState::CloseScan;
         ctx.step = 0;
         return nextCommand;
     }
@@ -322,7 +322,7 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
         return nextCommand;
     }
     if (ctx.step == 2) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Sleep for apple to settle
+        std::this_thread::sleep_for(std::chrono::milliseconds(300)); // Sleep for apple to settle
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;
         //nextCommand.requested_state = RobotState::ChuteRetreat;
