@@ -114,7 +114,7 @@ RobotCommand StateMachine::handleHold(RobotContext& ctx)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::CloseScan;
+        nextCommand.requested_state = RobotState::HeatScan;
         ctx.step = 0;
         return nextCommand;
     }
@@ -358,45 +358,44 @@ RobotCommand StateMachine::handleChuteRetreat(RobotContext& ctx)
 RobotCommand StateMachine::handleHeatScan(RobotContext& ctx)
 {
     if (ctx.state != RobotState::HeatScan) throw std::runtime_error("Improper state!");
-    if (ctx.general_command_fail)
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::Monitor;
-        return nextCommand;
-    }
-    if (ctx.step == 0) {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::GetNextScanPose;
-        nextCommand.requested_state = RobotState::HeatScan;
-        ctx.step = 1;
-        return nextCommand;
-    }
-    if (ctx.general_command_fail || timeout_elapsed(ctx.last_state, std::chrono::seconds(10)))
-    {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::Monitor;
-        return nextCommand;
-    }
-    if (ctx.vision_scan_available && ctx.step == 1) {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::MoveArm;
-        nextCommand.pose = ctx.target_pose;
-        nextCommand.requested_state = RobotState::HeatScan;
-        ctx.step = 2;
-        return nextCommand;
-    }
-    if (ctx.at_pose && ctx.step == 2) {
-        RobotCommand nextCommand;
-        nextCommand.type = CommandType::None;
-        nextCommand.requested_state = RobotState::CloseScan;
-        return nextCommand;
-    }
+    // if (ctx.general_command_fail)
+    // {
+    //     RobotCommand nextCommand;
+    //     nextCommand.type = CommandType::None;
+    //     nextCommand.requested_state = RobotState::Monitor;
+    //     return nextCommand;
+    // }
+    // if (ctx.step == 0) {
+    //     RobotCommand nextCommand;
+    //     nextCommand.type = CommandType::GetNextScanPose;
+    //     nextCommand.requested_state = RobotState::HeatScan;
+    //     ctx.step = 1;
+    //     return nextCommand;
+    // }
+    // if (ctx.general_command_fail || timeout_elapsed(ctx.last_state, std::chrono::seconds(10)))
+    // {
+    //     RobotCommand nextCommand;
+    //     nextCommand.type = CommandType::None;
+    //     nextCommand.requested_state = RobotState::Monitor;
+    //     return nextCommand;
+    // }
+    // if (ctx.vision_scan_available && ctx.step == 1) {
+    //     RobotCommand nextCommand;
+    //     nextCommand.type = CommandType::MoveArm;
+    //     nextCommand.pose = ctx.target_pose;
+    //     nextCommand.requested_state = RobotState::HeatScan;
+    //     ctx.step = 2;
+    //     return nextCommand;
+    // }
+    // if (ctx.at_pose && ctx.step == 2) {
+    //     RobotCommand nextCommand;
+    //     nextCommand.type = CommandType::None;
+    //     nextCommand.requested_state = RobotState::CloseScan;
+    //     return nextCommand;
+    // }
     RobotCommand tempCommand;
     tempCommand.type = CommandType::None;
-    tempCommand.pose = ctx.target_pose;
-    tempCommand.requested_state = RobotState::HeatScan;
+    tempCommand.requested_state = RobotState::Monitor;
     return tempCommand;
 }
 
