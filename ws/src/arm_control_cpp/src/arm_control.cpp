@@ -356,7 +356,7 @@ bool ArmController::cartesianMove(
             true
         );
     
-    if (fraction < 0.99)
+    if (fraction < 0.9)
     {
         RCLCPP_ERROR(
             get_logger(),

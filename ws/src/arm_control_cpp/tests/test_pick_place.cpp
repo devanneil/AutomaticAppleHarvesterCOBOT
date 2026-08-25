@@ -53,6 +53,8 @@ int main(int argc, char * argv[])
 
     std::cin.get();
 
+    node->context_.last_state = std::chrono::steady_clock::now();
+
     while (node->context_.state != RobotState::Monitor)
     {
         node->controlLoop();

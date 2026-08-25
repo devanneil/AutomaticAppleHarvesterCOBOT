@@ -839,6 +839,9 @@ def main(args=None):
             executor.spin_once()
             if node.viewport_image is not None:
                 cv2.imshow("Scout Camera View", node.viewport_image)
+            else:
+                if node.latest_image_raw is not None:
+                    cv2.imshow("Scout Camera View", node.latest_image_raw)
 
             key = cv2.waitKey(10) & 0xFF
 

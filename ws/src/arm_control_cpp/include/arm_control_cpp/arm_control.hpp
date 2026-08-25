@@ -130,7 +130,7 @@ private:
     int last_scan_ID = 0;
     rclcpp::TimerBase::SharedPtr vacuum_timer_;
     std::chrono::steady_clock::time_point last_suction_;
-    std::chrono::steady_clock::duration suction_timeout_ = std::chrono::seconds(5);
+    std::chrono::steady_clock::duration suction_timeout_ = std::chrono::seconds(7);
     RobotContext context_;
     StateMachine state_machine_;
     
