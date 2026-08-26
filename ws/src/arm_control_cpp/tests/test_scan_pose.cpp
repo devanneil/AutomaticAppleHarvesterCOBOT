@@ -65,19 +65,29 @@ int main(int argc, char * argv[])
 
     node->initializeMoveIt();
 
-    // This function is bad
-    node->getScanPose();
-    auto scan_pose = node->context_.target_pose;
-    assert((!node->context_.general_command_fail) && "NO SCAN POSE GIVEN!");
-
-    auto result = node->moveToPose(scan_pose, false, "suction_link");
-    assert(result && "FAILED TO MOVE TO POSE!");
-
-    std::cout << "Enter yes to clear out this scan pose: " << std::endl;
-    bool conf = getYesNo();
-    if(conf)
+    while(rclcpp::ok())
     {
-        node->clearScanPose();
+        // This function is bad
+        node->getScanPose();
+        auto scan_pose = node->context_.target_pose;
+        assert((!node->context_.general_command_fail) && "NO SCAN POSE GIVEN!");
+
+        auto result = node->moveToPose(scan_pose, false, "suction_link");
+        assert(result && "FAILED TO MOVE TO POSE!");
+
+        std::cout << "Enter yes to clear out this scan pose: " << std::endl;
+        bool conf = getYesNo();
+        if(conf)
+        {
+            node->clearScanPose();
+        }
+
+        std::cout << "Enter yes to continue, enter no to exit: " << std::endl;
+        conf = getYesNo();
+        if(!conf)
+        {
+            break;
+        }
     }
 
     executor.cancel();  
