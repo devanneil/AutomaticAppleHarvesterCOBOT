@@ -1,0 +1,4 @@
+numpy=2.2.6
+ultralytics=8.4.119
+torch=2.13.0
+qreader=3.16

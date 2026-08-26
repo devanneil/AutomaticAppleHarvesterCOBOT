@@ -3,9 +3,12 @@
 <package format="3">
   <name>apple_interfaces</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
-  <license>TODO: License declaration</license>
+  <description>
+    This package describes the interfaces between nodes for the Apple Picking system.
+  </description>
+  <maintainer email="devanneil2004@gmail.com">Devan Neil</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/devanneil/AutomaticAppleHarvesterCOBOT</url>
 
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>

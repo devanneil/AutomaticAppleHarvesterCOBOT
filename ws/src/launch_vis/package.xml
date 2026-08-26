@@ -3,9 +3,25 @@
 <package format="3">
   <name>launch_vis</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="devanneil2004@gmail.com">ros-dev</maintainer>
-  <license>TODO: License declaration</license>
+  <description>
+    This is the launch file for controlling the demo of the Apple picking arm. See README for instructions.
+  </description>
+  <maintainer email="devanneil2004@gmail.com">Devan Neil</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/devanneil/AutomaticAppleHarvesterCOBOT</url>
+
+  <exec_depend>apple_interfaces</exec_depend>
+  <exec_depend>arm_control_cpp</exec_depend>
+  <exec_depend>bin_manager</exec_depend>
+  <exec_depend>cam_drive_control</exec_depend>
+  <exec_depend>robot_model</exec_depend>
+  <exec_depend>robot_moveit_config</exec_depend>
+  <exec_depend>suction_commander</exec_depend>
+
+  <depend>launch</depend>
+  <depend>moveit_configs_utils</depend>
+  <depend>launch_ros</depend>
+  <depend>ament_index_python</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

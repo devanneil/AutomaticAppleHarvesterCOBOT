@@ -3,12 +3,27 @@
 <package format="3">
   <name>cam_drive_control</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
-  <license>TODO: License declaration</license>
+  <description>
+    This package interfaces with the arm and scout cameras from the Apple Picking arm to run inference and pose estimation in both.
+    This package depends on pip dependencies from requirements.txt
+  </description>
+  <maintainer email="devanneil2004@gmail.com">Devan Neil</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/devanneil/AutomaticAppleHarvesterCOBOT</url>
+
+  <depend>apple_interfaces</depend>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
+  <depend>ament_index_python</depend>
+  <depend>message_filters</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_py</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <exec_depend>python3-opencv</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

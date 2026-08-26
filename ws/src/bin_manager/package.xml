@@ -3,11 +3,23 @@
 <package format="3">
   <name>bin_manager</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
-  <license>TODO: License declaration</license>
+  <description>
+    This package places the bin filler into Moveit's planning space and manages it's position from a service.
+  </description>
+  <maintainer email="devanneil2004@gmail.com">Devan Neil</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/devanneil/AutomaticAppleHarvesterCOBOT</url>
 
   <depend>apple_interfaces</depend>
+
+  <depend>geometric_shapes</depend>
+  <depend>shape_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>tf2_ros</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
   
   <buildtool_depend>ament_cmake</buildtool_depend>
 

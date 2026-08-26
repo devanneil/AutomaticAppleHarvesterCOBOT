@@ -3,9 +3,13 @@
 <package format="3">
   <name>robot_model</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
-  <license>TODO: License declaration</license>
+  <description>
+    This package contains the URDFs for the apple picking robot.
+    These URDFs are not particularly accurate and should not be used as CAD reference
+  </description>
+  <maintainer email="devanneil2004@gmail.com">Devan Neil</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/devanneil/AutomaticAppleHarvesterCOBOT</url>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>duco_support</exec_depend>

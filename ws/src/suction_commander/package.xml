@@ -3,12 +3,18 @@
 <package format="3">
   <name>suction_commander</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
-  <license>TODO: License declaration</license>
+  <description>
+    This package controls the ESP32 serial interface for commanding the suction system on the arm. 
+    This package relies on apple_interfaces to communicate with the rest of the system.
+    This package always checks for the ESP32 on /dev/ttyUSB0.
+  </description>
+  <maintainer email="devanneil2004@gmail.com">Devan Neil</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/devanneil/AutomaticAppleHarvesterCOBOT</url>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>apple_interfaces</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

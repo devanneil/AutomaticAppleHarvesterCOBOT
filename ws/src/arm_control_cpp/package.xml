@@ -3,9 +3,13 @@
 <package format="3">
   <name>arm_control_cpp</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="devanneil2004@gmail.com">rnall</maintainer>
-  <license>TODO: License declaration</license>
+  <description>
+    This package is the core logical flow for the Apple Picking system. See README for instruction.
+    This package is the sole controller of moveit, no other package may command moveit.
+  </description>
+  <maintainer email="devanneil2004@gmail.com">Devan Neil</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/devanneil/AutomaticAppleHarvesterCOBOT</url>
 
   <depend>apple_interfaces</depend>
 
@@ -15,6 +19,9 @@
   <depend>moveit_msgs</depend>
   <depend>moveit_visual_tools</depend>
   <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>std_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
