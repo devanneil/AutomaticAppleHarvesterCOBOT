@@ -302,7 +302,7 @@ class ScoutCamera(Node):
                     self.get_logger().warn("Do not move here, critical poses to be cleared!", throttle_duration_sec=5.0)
                 else:
                     if pose_ws_count < MAX_POSES_IN_WS: 
-                        self.get_logger().warn("Move forward by one pane!", throttle_duration_sec=5.0)
+                        self.get_logger().debug("Move forward by one pane!", throttle_duration_sec=5.0)
                     else:
                         self.get_logger().warn("Too many scans to be cleared, don't move yet!", throttle_duration_sec=5.0)
             
