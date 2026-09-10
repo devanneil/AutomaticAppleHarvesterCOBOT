@@ -124,7 +124,6 @@ To start the demo, do these steps in this order (Windows).
 * Firstly, set the mode on the teach pendant to Manual and the speed to 50%. If you want to move the arm faster, set the mode to Automatic and the speed to 100%. These settings can be found at the top right of the teach pendant screen.
 * Open the Executables folder.
 * Run `Initialize System.bat`.
-* At this point you may run `Suction Test.bat`, which just verifies the suction system is working.
 * This step may fail. Below are debugging steps.
   * `No CP210x USB device is currently connected.`: Make sure the USB cable is connected to the ESP32.
   * `Failed to attach USB device.`: Unplug the USB cable and plug it back in.
@@ -140,13 +139,14 @@ To start the demo, do these steps in this order (Windows).
     [component_container-3] [INFO] [1787699358.211737362] [arm1_cam]: scGetFrameReady failed! -23
     ```
     This is a stale camera error. We don't know what causes it, but to fix it you have to restart the system
-* Wait for the arm to entirely activate. It will make noise, and a chattering sound.
+* Wait for the arm to entirely activate. It will make noise, and a chattering sound. Wait for the blue light around the wrist.
 * You may see log statements like these:
 ```
 [scout_camera_scanner-6] [WARN] [1787765171.013004085] [scout_camera]: Move forward by one pane!
 [robot_state_publisher-8] [WARN] [1787765166.711975152] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
 ```
 You may safely ignore these.
+* At this point you may run `Suction Test.bat`, which just verifies the suction system is working.
 * Run the `Do QR Scan.bat` executable. THIS WILL MOVE THE ARM. Pay attention to where the arm ends up after the second movement, it should be directly over the chute.
 * IF the arm successfully found the chute, you may run `Scan In Place.bat` to scan the apples the arm can currently see, which you can find on the Camera View window. 
 * This step may fail with `[ERROR] [1787765587.115700842] [qr_check_node]: QR check failed: no /qr_valid state received.`. IF you have ran `Do QR Scan.bat` after running `Initialize System.bat`, you may safely rerun this code and it should work. This issue is because the computer's CPU is struggling to keep up with the processes running.

@@ -409,6 +409,14 @@ RobotCommand StateMachine::handleCloseScan(RobotContext& ctx)
         nextCommand.requested_state = RobotState::Hold;
         return nextCommand;
     }
+    if (ctx.step == 0)
+    {
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::StartSuction;
+        nextCommand.requested_state = RobotState::CloseScan;
+        ctx.step = 1;
+        return nextCommand;
+    }
     if (ctx.consensus_size > 0)
     {
         RobotCommand nextCommand;

@@ -1,7 +1,7 @@
 const uint8_t HEADER = 0xAA;
 
 const int relayPins[4] = {15, 16, 17, 18}; // 15, RX, TX, MO
-const int switchPins[4] = {19, 23, 21, 22}; // MI, SDL, 21, SCL
+const int switchPins[4] = {21, 23, 19, 22}; // 21, SDL, MI, SCL
 uint8_t relayState = 0;
 
 void setup() {
