@@ -674,6 +674,7 @@ void ArmController::feedback_callback(
                 std::lock_guard<std::mutex> ctx_lock(context_mutex_);
                 context_.consensus_size++;
             }
+            logPose("Apple pose:", apple);
         }
     }
     if (last_goal_order_ == VisionScan::Goal::QR_SCAN)

@@ -208,7 +208,7 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
         ctx.step = 1;
         return nextCommand;
     }
-    if(ctx.step == 1 && !ctx.move_command_fail)
+    if(ctx.step == 1 && !ctx.move_command_fail && ctx.suction_state)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
