@@ -638,6 +638,11 @@ class CameraDriver(Node):
         pose.pose.orientation.w = -0.5
         pose.header.frame_id = "base_link"
 
+        ### TEMPORARY OVERRIDE FOR DEMO
+        pose.pose.position.x = -0.5
+        pose.pose.position.y = 0.375
+        pose.pose.position.z = 1.118
+
         return True, pose
 
 
