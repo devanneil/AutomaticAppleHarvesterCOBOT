@@ -44,6 +44,7 @@ geometry_msgs::msg::PoseStamped twistPick(
 );
 
 geometry_msgs::msg::PoseStamped getPoseForState(RobotContext &ctx);
+geometry_msgs::msg::PoseStamped getMonPose();
 
 inline const char* robotStateToString(RobotState state)
 {

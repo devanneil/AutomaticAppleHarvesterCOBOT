@@ -50,6 +50,10 @@ geometry_msgs::msg::PoseStamped getPoseForState(RobotContext &ctx)
     }
 }
 
+geometry_msgs::msg::PoseStamped getMonPose()
+{
+    return create_pose(0.515, 0.283, 1.392, -1.574, 0.0, -1.518, "base_link"); // Redo later for extensibility
+}
 geometry_msgs::msg::PoseStamped twistPick(
     geometry_msgs::msg::PoseStamped pose,
     double twist_angle

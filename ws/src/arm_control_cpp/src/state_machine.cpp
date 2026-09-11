@@ -195,23 +195,37 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
     if (ctx.state != RobotState::Retreat) throw std::runtime_error("Improper state!");
     if(ctx.step == 0) 
     {
+        auto monPoseX = getMonPose().pose.position.x;
+
         RobotCommand nextCommand;
         nextCommand.type = CommandType::CartesianMove;
         nextCommand.waypoints = {twistPick(ctx.target_pose)};
         nextCommand.requested_state = RobotState::Retreat;
         auto pose = ctx.target_pose;
-        pose.pose.position.x -= 0.2;
+        pose.pose.position.x = monPoseX;
         pose.pose.position.z += 0.1;
         nextCommand.waypoints.push_back(pose);
         ctx.step = 1;
         return nextCommand;
     }
-    else
+    if(ctx.step == 1 && !ctx.move_command_fail)
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::None;
         nextCommand.requested_state = RobotState::ChutePrepare;
         ctx.step = 0;
+        return nextCommand;
+    }
+    else
+    {
+        auto monPoseX = getMonPose().pose.position.x;
+
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        auto pose = ctx.target_pose;
+        pose.pose.position.x = monPoseX;
+        nextCommand.pose = pose;
+        nextCommand.requested_state = RobotState::Retreat;
         return nextCommand;
     }
 }
