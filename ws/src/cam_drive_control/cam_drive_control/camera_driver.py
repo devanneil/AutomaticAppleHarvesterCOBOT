@@ -500,7 +500,7 @@ class CameraDriver(Node):
                     world_locations.append(pose)
         else:
             cons = local_results[0]
-            valid, pose = self.consToPoseEstimate(cons)
+            valid, pose = self.QRConsToPoseEstimate(cons)
             if valid:
                 world_locations.append(pose)
         
@@ -538,7 +538,7 @@ class CameraDriver(Node):
         return result
 
 
-    def consToPoseEstimate(self, cons: ConsensusStruct):
+    def QRConsToPoseEstimate(self, cons: ConsensusStruct):
         if self.cx == None:
             return False, None
         x1 = int(min(cons.u1, cons.u2))
@@ -562,13 +562,64 @@ class CameraDriver(Node):
         y = (v - self.cy) * z / self.fy
         
         points = np.vstack((x, y, z)).T
+
+        best_norm = None
+        best_inliers = None
+
+        num_iterations = 100
+        distance_threshold = 0.005  # 5 mm
+
+        num_points = len(points)
+
+        if num_points < 3:
+            return False, None
+
+        for _ in range(num_iterations):
+
+            # Pick 4 random points
+            indices = np.random.choice(num_points, 3, replace=False)
+            p1, p2, p3 = points[indices]
+            # self.get_logger().info(f"Sample points: {sample}")
+
+            # Generate normal vector from sample
+            u_vec = p2 - p1
+            v_vec = p3 - p2
+            # self.get_logger().info(f"Point-to-Point vectors: {u_vec}, {v_vec}")
+
+            normal = np.linalg.cross(u_vec, v_vec)
+            norm = np.linalg.norm(normal)
+            if norm == 0:
+                continue
+            normal = normal / norm
+
+            # self.get_logger().info(f"Calculated Unit Norm: {sample_norm_unit}")
+            d = -np.dot(normal, p1)
+
+            distances = np.abs(np.dot(points, normal) + d)
+            # self.get_logger().info(f"Distances: {distances}")
+
+            inliers = np.where(distances < distance_threshold)[0]
+
+            num_inliers = np.count_nonzero(inliers)
+
+            # self.get_logger().info(f"Num_inliers: {num_inliers}")
+
+            if best_inliers is None or num_inliers > np.count_nonzero(best_inliers):
+                best_norm = normal
+                best_inliers = inliers
+
+        planar_points = points[best_inliers]
+        self.get_logger().info(f"Planar point: {planar_points[0]}")
+        planar_centroid = np.mean(planar_points, axis=0)
         centroid = np.mean(points, axis=0)
+
+        self.get_logger().info(f"RANSAC Difference: {centroid - planar_centroid}")
 
         centroid_pose = Pose()
 
-        centroid_pose.position.x = centroid[0]
-        centroid_pose.position.y = centroid[1]
-        centroid_pose.position.z = centroid[2]
+        centroid_pose.position.x = planar_centroid[0]
+        centroid_pose.position.y = planar_centroid[1]
+        centroid_pose.position.z = planar_centroid[2]
 
         transformedPose = tf2_geometry_msgs.do_transform_pose(centroid_pose, cons.tf)
 
