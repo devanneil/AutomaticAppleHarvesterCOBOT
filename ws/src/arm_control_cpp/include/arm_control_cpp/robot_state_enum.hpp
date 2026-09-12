@@ -28,6 +28,7 @@ struct RobotContext
     std::string planning_group;
 
     geometry_msgs::msg::PoseStamped target_pose;
+    geometry_msgs::msg::PoseStamped last_scan_pose;
 
     int step = 0;
     

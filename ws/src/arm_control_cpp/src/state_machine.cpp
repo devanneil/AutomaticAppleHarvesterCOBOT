@@ -126,12 +126,22 @@ Moving towards pick
 RobotCommand StateMachine::handleApproach(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Approach) throw std::runtime_error("Improper state!");
-    if (!ctx.at_pose)
+    if (ctx.step == 0)
     {
+        ctx.step = 1;
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = ctx.last_scan_pose;
+        nextCommand.requested_state = RobotState::Approach;
+        return nextCommand;
+    }
+    if (ctx.step == 1)
+    {
+        ctx.step = 2;
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = ctx.target_pose;
-        nextCommand.pose.pose.position.x -= 0.2;
+        nextCommand.pose.pose.position.x -= 0.25;
         nextCommand.requested_state = RobotState::Approach;
         return nextCommand;
     }
@@ -157,6 +167,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
         RobotCommand nextCommand;
         nextCommand.type = CommandType::MoveArm;
         nextCommand.pose = ctx.target_pose;
+        nextCommand.pose.pose.position.x += 0.01;
         nextCommand.requested_state = RobotState::Pick;
         return nextCommand;
     }
@@ -176,7 +187,7 @@ RobotCommand StateMachine::handlePick(RobotContext& ctx)
         ctx.step = 0;
         return nextCommand;
     }
-    if (timeout_elapsed(ctx.last_state, std::chrono::milliseconds(5000)))
+    if (timeout_elapsed(ctx.last_state, std::chrono::milliseconds(8000)))
     {
         RobotCommand nextCommand;
         nextCommand.type = CommandType::StopSuction;

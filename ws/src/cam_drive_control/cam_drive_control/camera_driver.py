@@ -32,6 +32,8 @@ from apple_interfaces.srv import CloudScan
 from apple_interfaces.action import VisionScan
 from enum import Enum, auto
 
+APPLE_FAR_LIMIT = 0.9
+
 class PerceptionMode(Enum):
     IDLE = auto()
     APPLE = auto()
@@ -289,13 +291,16 @@ class CameraDriver(Node):
 
 
                     if x1 <= u <= x2 and y1 <= v <= y2:
+                        print(f"Result at {u}, {v}: ")
+                        print(f"Conf: {box.conf[0]}")
 
                         if float(box.conf[0]) < self.confidence_threshold:
                             return
 
-                        # self.get_logger().info(
-                        #     f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
-                        # )
+                        print(
+                            f"Pixel Coordinates: u1:{x1}, v1{y1}, u1{x2}, v2{y2}"
+                        )
+                        print(f"TF: {t_base_cam}")
                         newCons = ConsensusStruct(x1, y1, x2, y2, box.conf[0],
                             depth_image, t_base_cam)
                         append = True
@@ -422,8 +427,9 @@ class CameraDriver(Node):
             self.results = None
             self.results_qr = None
 
-        with self.selected_lock:
-            self.selected_results.clear()
+        if self.headless:
+            with self.selected_lock:
+                self.selected_results.clear()
         # Wait until latest stamp matches current time
         goal_start = self.get_clock().now()
 
@@ -519,6 +525,12 @@ class CameraDriver(Node):
             world_locations,
             key=lambda pose: pose.pose.position.x
         )
+        for pose in world_locations:
+            x = pose.pose.position.x
+            y = pose.pose.position.y
+            z = pose.pose.position.z
+            self.get_logger().info(f"Apple Pose: {x}, {y}, {z}")
+        world_locations = [pose for pose in world_locations if pose.pose.position.x < APPLE_FAR_LIMIT]
         if goal.order == VisionScan.Goal.APPLE_SCAN:
             feedback_msg.apples = world_locations
         else:
@@ -686,14 +698,14 @@ class CameraDriver(Node):
 
         # Expected apple radius in meters.
         # Adjust this to your actual apples.
-        radius_min = 0.025
+        radius_min = 0.015
         radius_max = 0.060
 
         best_center = None
         best_radius = None
         best_inliers = None
 
-        num_iterations = 500
+        num_iterations = 700
         distance_threshold = 0.005  # 5 mm
 
         num_points = len(points)

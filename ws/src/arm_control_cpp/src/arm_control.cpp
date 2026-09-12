@@ -665,6 +665,10 @@ void ArmController::feedback_callback(
         "Vision feedback success: %s",
         feedback->success ? "true" : "false"
     );
+    // {
+    //     std::lock_guard<std::mutex> ctx_lock(context_mutex_);
+    //     context_.last_scan_pose = move_group_->getCurrentPose("suction_link");
+    // }
     if (last_goal_order_ == VisionScan::Goal::APPLE_SCAN)
     {
         for (const auto & apple : feedback->apples)

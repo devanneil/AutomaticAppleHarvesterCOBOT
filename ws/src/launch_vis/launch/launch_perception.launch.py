@@ -12,7 +12,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'auto_mode',
-            default_value='true',
+            default_value='false',
             description='Run mode: auto or manual'
         ),
         DeclareLaunchArgument(
