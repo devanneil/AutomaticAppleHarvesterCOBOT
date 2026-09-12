@@ -225,7 +225,7 @@ RobotCommand StateMachine::handleRetreat(RobotContext& ctx)
         auto pose = ctx.target_pose;
         pose.pose.position.x = monPoseX;
         nextCommand.pose = pose;
-        nextCommand.requested_state = RobotState::Retreat;
+        nextCommand.requested_state = RobotState::Hold;
         return nextCommand;
     }
 }
@@ -318,14 +318,14 @@ RobotCommand StateMachine::handleChute(RobotContext& ctx)
 {
     if (ctx.state != RobotState::Chute) throw std::runtime_error("Improper state!");
     if (ctx.step == 0) {
-        // RobotCommand nextCommand;
-        // nextCommand.type = CommandType::MoveArm;
-        // nextCommand.pose = getPoseForState(ctx);
-        // nextCommand.pose.pose.position.z += 0.05;
-        // nextCommand.requested_state = RobotState::Chute;
-        // ctx.step = 1;
-        // return nextCommand;
-        ctx.step = 1; // Skip this command
+        RobotCommand nextCommand;
+        nextCommand.type = CommandType::MoveArm;
+        nextCommand.pose = getPoseForState(ctx);
+        nextCommand.pose.pose.position.z += 0.05;
+        nextCommand.requested_state = RobotState::Chute;
+        ctx.step = 1;
+        return nextCommand;
+        //ctx.step = 1; // Skip this command
     }
     if (ctx.step == 1) {
         RobotCommand nextCommand;
