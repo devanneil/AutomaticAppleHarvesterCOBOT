@@ -55,7 +55,7 @@ MAX_RIGHT_SCAN = 1.3462/2 # meters
 SCAN_PLANE_DISTANCE = 1.859 # meters between scout camera and scanning plane
 CAM_TO_WALL_DISTANCE = 0.1 # meters between arm camera and scanning plane
 MAX_POSES_IN_WS = 10
-CONFIDENCE_THRESHOLD = 0.85
+CONFIDENCE_THRESHOLD = 0.7
 RADIUS = int(0.25 * GOAL_RADIUS * 0.6)
 MAX_DEPTH_SEARCH = 30
 MAX_WIDTH_SEARCH = 50
@@ -330,6 +330,11 @@ class ScoutCamera(Node):
                         local_image = self.latest_image_raw
                     if local_image is None:
                         return
+                    local_w, local_h = local_image.shape[:2]
+                    slice_width = 400
+                    x_min = int(max(0, local_w/2 - slice_width/2))
+                    x_max = int(min(local_w, local_w/2 + slice_width/2))
+                    local_image = local_image[x_min:x_max, 0:local_h]
                     self.get_logger().info("Scanning here!")
                     self.scan_busy = True
                     results = self.apple_model(local_image, verbose=False)

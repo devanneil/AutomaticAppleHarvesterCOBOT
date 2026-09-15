@@ -32,7 +32,7 @@ from apple_interfaces.srv import CloudScan
 from apple_interfaces.action import VisionScan
 from enum import Enum, auto
 
-APPLE_FAR_LIMIT = 0.9
+APPLE_FAR_LIMIT = 1.5
 
 class PerceptionMode(Enum):
     IDLE = auto()
@@ -860,7 +860,7 @@ class CameraDriver(Node):
 
         # Your existing tool offset
         pose.pose.position.x += 0.05
-        pose.pose.position.y -= 0.03
+        pose.pose.position.y -= 0.05
         pose.pose.position.z += 0.09
 
         pose.pose.orientation.x = 0.5

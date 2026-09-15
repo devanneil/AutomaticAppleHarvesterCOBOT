@@ -243,7 +243,7 @@ bool ArmController::moveToPose(
     {
         move_group_->setPlanningPipelineId("ompl");
         move_group_->setPlannerId("RRTstar");
-        move_group_->setPlanningTime(1.0);
+        move_group_->setPlanningTime(1.5);
         move_group_->setNumPlanningAttempts(5);
 
         planned = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
@@ -263,13 +263,13 @@ bool ArmController::moveToPose(
         return false;
     }
 
-    const auto &traj = plan.trajectory_.joint_trajectory;
+    // const auto &traj = plan.trajectory_.joint_trajectory;
 
-    RCLCPP_INFO(
-        get_logger(),
-        "Trajectory: %zu points, %zu joints",
-        traj.points.size(),
-        traj.joint_names.size());
+    // RCLCPP_INFO(
+    //     get_logger(),
+    //     "Trajectory: %zu points, %zu joints",
+    //     traj.points.size(),
+    //     traj.joint_names.size());
 
     // for (size_t i = 0; i < traj.points.size(); ++i)
     // {
@@ -290,6 +290,10 @@ bool ArmController::moveToPose(
     //             traj.joint_names[j].c_str(),
     //             p.positions[j],
     //             j < p.velocities.size() ? p.velocities[j] : 0.0);
+    //         if(p.positions[j] == 0)
+    //         {
+    //             RCLCPP_WARN(get_logger(), "Point[%d]: %s joint crossed 0.0", i, traj.joint_names[j].c_str());
+    //         }
     //     }
     // }
 
