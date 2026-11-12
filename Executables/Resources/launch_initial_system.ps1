@@ -71,7 +71,7 @@ Write-Host "  $RunLogDir"
 Write-Host "`nStarting ROS system..." -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop ROS.`n"
 
-$RosCommand = "cd $Workspace && source /opt/ros/humble/setup.bash && source install/setup.bash && ros2 launch launch_vis launch_sys.launch.py "
+$RosCommand = "cd $Workspace && source /opt/ros/humble/setup.bash && source install/setup.bash && ros2 launch launch_vis launch_single_arm.launch.py "
 
 # Run ROS and capture everything
 wsl.exe -d $Distro -- bash -c $RosCommand 2>&1 |
