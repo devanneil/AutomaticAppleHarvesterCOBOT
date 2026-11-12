@@ -37,11 +37,18 @@ geometry_msgs::msg::PoseStamped randomize_pose(geometry_msgs::msg::PoseStamped p
     std::cout << x_scale << " " << z_scale << std::endl;
     // x_scale = 1.0;
     // z_scale = 1.0;
-    float degrees_scale = 2.0 * (static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) - 0.5f);
     float x_val = pose.pose.position.x + x_max_dist * x_scale;
     float z_val = pose.pose.position.z + z_max_dist * z_scale;
-    float rad_val = degreesToRadians(roll_max_deg * degrees_scale);
-    return create_pose(x_val, 1.2, z_val, -M_PI/2, rad_val, 0.0, "base_link");
+    geometry_msgs::msg::PoseStamped ret_pose = pose;
+    ret_pose.pose.position.x = x_val;
+    ret_pose.pose.position.z = z_val;
+    return ret_pose;
+}
+
+geometry_msgs::msg::PoseStamped spin_pose(geometry_msgs::msg::PoseStamped pose)
+{
+    float rad_val = degreesToRadians(90);
+    return create_pose(pose.pose.position.x, pose.pose.position.y, pose.pose.position.z, -M_PI/2, rad_val, 0.0, "base_link");
 }
 
 int main(int argc, char * argv[])
@@ -82,6 +89,9 @@ int main(int argc, char * argv[])
         std::cout << "====================================\n";
 
         std::cin.get();
+
+        auto spun_pose = spin_pose(monitor_pose);
+        node->moveToPose(spun_pose, false, "suction_link");
 
         for(int i = 0; i < 4; i++)
         {
