@@ -152,6 +152,11 @@ add_robot_test(
     test_scan_pose
 )
 
+add_robot_test(
+    visual_demo
+    test_visual_demo_quick
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights

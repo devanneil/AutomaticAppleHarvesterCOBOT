@@ -259,34 +259,34 @@ def generate_launch_description():
         )
     )
 
-    ld.add_action(
-        Node(
-            package="robot_state_publisher",
-            executable="robot_state_publisher",
-            namespace="bin_manager",
-            parameters=[{
-                    "robot_description": robot_description
-                }]
-        )
-    )
+    # ld.add_action(
+    #     Node(
+    #         package="robot_state_publisher",
+    #         executable="robot_state_publisher",
+    #         namespace="bin_manager",
+    #         parameters=[{
+    #                 "robot_description": robot_description
+    #             }]
+    #     )
+    # )
 
-    ld.add_action(
-        Node(
-            package="bin_manager",
-            executable="bin_manager",
-            parameters=[sys_config],
-        )
-    )
+    # ld.add_action(
+    #     Node(
+    #         package="bin_manager",
+    #         executable="bin_manager",
+    #         parameters=[sys_config],
+    #     )
+    # )
 
-    ld.add_action(
-        Node(
-            package="robot_state_publisher",
-            executable="robot_state_publisher",
-            namespace="arm_1_workspace",
-            parameters=[{
-                    "robot_description": workspace_descritpion
-                }]
-        )
-    )
+    # ld.add_action(
+    #     Node(
+    #         package="robot_state_publisher",
+    #         executable="robot_state_publisher",
+    #         namespace="arm_1_workspace",
+    #         parameters=[{
+    #                 "robot_description": workspace_descritpion
+    #             }]
+    #     )
+    # )
 
     return ld
